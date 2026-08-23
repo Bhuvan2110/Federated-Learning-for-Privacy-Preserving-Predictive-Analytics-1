@@ -22,6 +22,32 @@ import type { AuthMode, SessionUser, StoredUser } from "./types";
 const K_USERS = "fedshield.users";
 const K_SESSION = "fedshield.session";
 const K_RESETS = "fedshield.resets";
+const K_GOOGLE = "fedshield.googleAccounts";
+
+/* ── Google accounts known to this device ────────────────────
+ * The chooser on the login page lists accounts previously used
+ * on this system (persisted here) plus any added via consent.
+ * When VITE_GOOGLE_CLIENT_ID is set, real Google Identity
+ * Services One Tap additionally surfaces the browser's actual
+ * signed-in Google accounts. */
+
+export interface GoogleAccount {
+  name: string;
+  email: string;
+  lastUsed: number;
+}
+
+export function getKnownGoogleAccounts(): GoogleAccount[] {
+  return readJson<GoogleAccount[]>(K_GOOGLE, []);
+}
+
+export function rememberGoogleAccount(a: { name: string; email: string }) {
+  const list = getKnownGoogleAccounts().filter(
+    (x) => x.email.toLowerCase() !== a.email.toLowerCase()
+  );
+  list.unshift({ name: a.name, email: a.email.toLowerCase(), lastUsed: Date.now() });
+  writeJson(K_GOOGLE, list.slice(0, 6));
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -264,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const googleSignIn = useCallback(async (profile: { name: string; email: string }) => {
     setBusy(true);
+    rememberGoogleAccount(profile); // remember this account on the device for the chooser
     await wait(900); // simulated OAuth redirect + token exchange
     const users = readJson<StoredUser[]>(K_USERS, []);
     const clean = profile.email.trim().toLowerCase();

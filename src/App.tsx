@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import { AppProvider, useApp } from "./lib/store";
 import AuthPage from "./pages/AuthPage";
 import Shell from "./components/Shell";
+import AgentWidget from "./components/AgentWidget";
 import { ToastHost } from "./components/ui";
 import { IconLogo } from "./components/icons";
 
@@ -25,6 +26,7 @@ function Root() {
   return (
     <>
       {mode === null ? <AuthPage /> : <Shell />}
+      <AgentWidget />
       <ToastHost toasts={toasts} dismiss={dismissToast} />
     </>
   );

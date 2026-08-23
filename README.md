@@ -14,7 +14,9 @@ convergence telemetry, centralized baselines) runs live in the browser via a rea
 
 | Area | What's implemented |
 |---|---|
-| **Authentication** | Email + password (SHA-256 hashed), registration, login, password validation w/ strength meter, forgot/reset flow (6-digit code + simulated inbox), Google OAuth 2.0 (simulated consent screen, Firebase-compatible adapter), logout |
+| **Authentication** | Email + password (SHA-256 hashed), registration, login, password validation w/ strength meter, forgot/reset flow (6-digit code + simulated inbox), logout |
+| **Google Sign-In** | Google-styled **account chooser** listing the accounts present on this system (persisted, most-recent first) + "Use another account" consent flow. Set `VITE_GOOGLE_CLIENT_ID` and the chooser also launches **real Google Identity Services One Tap**, surfacing the browser's actual signed-in Google accounts |
+| **AI assistant** | Bottom-left **FedShield Copilot**: with a DashScope key it streams answers from **Qwen3** (`qwen-plus` default, selectable); without one it answers from a built-in FL knowledge base wired to live session state ("what's my best model?"). Key set via the gear icon or `VITE_QWEN_API_KEY` in `.env` — never hard-coded |
 | **Guest / Demo Mode** | "Skip for now" enters a clearly-badged Guest Mode with full dashboard + training access; exports, run deletion and the client registry stay locked |
 | **FL workflow** | Dataset → distribution → clients → local training → privacy protection → secure aggregation → global model → predictive analytics, visualized as a live 8-stage pipeline and animated server↔client topology |
 | **Engine** | Logistic-regression models, full-batch SGD, **FedAvg** + **FedProx** (proximal term μ), Dirichlet non-IID partitions, partial participation, per-round server-side evaluation on a holdout set |
@@ -70,9 +72,10 @@ src/
   console even audits this (`raw rows transmitted: 0` by construction).
 - **Guests are a separate trust tier**: they can explore and train, but model export, run deletion and
   registry mutation are disabled in the UI and would be rejected by API guards in the production backend.
-- **Secrets**: nothing is hard-coded. To go live with Firebase, create `.env` with
-  `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`
-  and swap the adapter in `src/lib/auth.tsx` — the rest of the app only consumes the `useAuth()` interface.
+- **Secrets**: nothing is hard-coded — see `.env.example`. Optional keys:
+  - `VITE_QWEN_API_KEY` (+ `VITE_QWEN_REGION`, `VITE_QWEN_MODEL`) → powers the bottom-left AI assistant with Qwen3 (DashScope). Without it, the assistant falls back to a built-in federated-learning knowledge base.
+  - `VITE_GOOGLE_CLIENT_ID` → enables **real** Google One Tap (shows the browser's actual signed-in accounts) alongside the on-device account chooser.
+  - `VITE_FIREBASE_*` → swap the demo auth adapter in `src/lib/auth.tsx` for the real Firebase SDK.
 - All user inputs are validated (email format, password policy, reset codes, slider bounds).
 
 ## Run it

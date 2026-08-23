@@ -1,7 +1,7 @@
 /* FedShield — Authentication (email/password, Google OAuth, reset, guest mode) */
 import { useEffect, useState } from "react";
-import { checkPassword, useAuth, validateEmail } from "../lib/auth";
-import type { ResetTicket } from "../lib/auth";
+import { checkPassword, getKnownGoogleAccounts, useAuth, validateEmail } from "../lib/auth";
+import type { GoogleAccount, ResetTicket } from "../lib/auth";
 import type { Phase } from "../lib/types";
 import {
   IconArrowRight,
@@ -40,10 +40,56 @@ const TICKER = [
   "[privacy] raw rows transmitted this session: 0",
 ];
 
-const GOOGLE_PERSONAS = [
-  { name: "Aisha Karimi", email: "aisha.karimi@gmail.com", title: "ML Engineer" },
-  { name: "Daniel Okafor", email: "d.okafor@gmail.com", title: "Data Scientist" },
+const GOOGLE_PERSONAS: GoogleAccount[] = [
+  { name: "Aisha Karimi", email: "aisha.karimi@gmail.com", lastUsed: 0 },
+  { name: "Daniel Okafor", email: "d.okafor@gmail.com", lastUsed: 0 },
 ];
+
+/* OAuth 2.0 client ID from .env — enables REAL Google Identity
+   Services One Tap (shows the browser's actual signed-in accounts). */
+const GOOGLE_CLIENT_ID =
+  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_GOOGLE_CLIENT_ID ?? "";
+
+function loadGIS(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const w = window as unknown as { google?: unknown };
+    if (w.google) return resolve();
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Google Identity Services unavailable"));
+    document.head.appendChild(s);
+  });
+}
+
+function startGoogleOneTap(onProfile: (p: { name: string; email: string }) => void): Promise<void> {
+  if (!GOOGLE_CLIENT_ID) return Promise.reject(new Error("no-client-id"));
+  return loadGIS().then(() => {
+    const g = (window as unknown as {
+      google: { accounts: { id: { initialize: (o: object) => void; prompt: () => void } } };
+    }).google;
+    g.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: (resp: { credential: string }) => {
+        try {
+          const payload = JSON.parse(atob(resp.credential.split(".")[1]));
+          onProfile({ name: payload.name ?? payload.email, email: payload.email });
+        } catch {
+          /* malformed credential */
+        }
+      },
+    });
+    g.accounts.id.prompt();
+  });
+}
+
+const AVATAR_HUES = [174, 210, 32, 350, 262, 96];
+function avatarColor(email: string): string {
+  let h = 0;
+  for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) >>> 0;
+  return `hsl(${AVATAR_HUES[h % AVATAR_HUES.length]} 58% 46%)`;
+}
 
 export default function AuthPage() {
   const auth = useAuth();
@@ -60,7 +106,32 @@ export default function AuthPage() {
   const [ticket, setTicket] = useState<ResetTicket | null>(null);
   const [resetCode, setResetCode] = useState("");
   const [googleOpen, setGoogleOpen] = useState(false);
-  const [persona, setPersona] = useState(GOOGLE_PERSONAS[0]);
+  const [addAccountStep, setAddAccountStep] = useState(false);
+  const [gName, setGName] = useState("");
+  const [gEmail, setGEmail] = useState("");
+  const [gisLive, setGisLive] = useState(false);
+
+  // Accounts present on this system: previously used (persisted) first, then demo accounts
+  const deviceAccounts: GoogleAccount[] = (() => {
+    const known = getKnownGoogleAccounts();
+    const rest = GOOGLE_PERSONAS.filter((p) => !known.some((k) => k.email === p.email));
+    return [...known, ...rest];
+  })();
+
+  const openGoogleChooser = () => {
+    setGoogleOpen(true);
+    setAddAccountStep(false);
+    setGisLive(false);
+    if (GOOGLE_CLIENT_ID) {
+      // Real One Tap surfaces the browser's actual signed-in Google accounts
+      startGoogleOneTap((p) => {
+        setGoogleOpen(false);
+        void handleGoogleProfile(p);
+      })
+        .then(() => setGisLive(true))
+        .catch(() => setGisLive(false));
+    }
+  };
 
   const [phaseIdx, setPhaseIdx] = useState(1);
   const [demoRound, setDemoRound] = useState(12);
@@ -145,15 +216,25 @@ export default function AuthPage() {
     }
   };
 
-  const handleGoogle = async () => {
+  const handleGoogleProfile = async (profile: { name: string; email: string }) => {
     setFormErr(null);
     try {
-      await auth.googleSignIn(persona);
+      await auth.googleSignIn(profile);
       setGoogleOpen(false);
-      toast("success", `Signed in with Google as ${persona.name}.`);
+      toast("success", `Signed in with Google as ${profile.name}.`);
     } catch (err) {
       setFormErr(err instanceof Error ? err.message : "Google sign-in failed.");
     }
+  };
+
+  const authorizeNewAccount = async () => {
+    const emailErr = validateEmail(gEmail);
+    const nameErr = gName.trim().length < 2 ? "Enter the account holder's name." : null;
+    if (emailErr || nameErr) {
+      setFormErr(emailErr ?? nameErr);
+      return;
+    }
+    await handleGoogleProfile({ name: gName.trim(), email: gEmail.trim() });
   };
 
   const strength = ["Too short", "Weak", "Acceptable", "Strong", "Excellent"][pwCheck.score];
@@ -420,7 +501,7 @@ export default function AuthPage() {
                 <span className="flex-1 h-px bg-line" />
               </div>
 
-              <Button variant="outline" className="w-full" size="lg" onClick={() => setGoogleOpen(true)}>
+              <Button variant="outline" className="w-full" size="lg" onClick={openGoogleChooser}>
                 <IconGoogle /> Continue with Google
               </Button>
 
@@ -448,43 +529,124 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Google account chooser (simulated OAuth consent) */}
-      <Modal open={googleOpen} onClose={() => setGoogleOpen(false)} title={<span className="flex items-center gap-2"><IconGoogle /> Choose a Google account</span>}>
-        <p className="text-[12.5px] text-fog-500 mb-4">
-          Simulated OAuth 2.0 consent screen — in production this redirects to accounts.google.com via Firebase Auth.
-        </p>
-        <div className="space-y-2">
-          {GOOGLE_PERSONAS.map((p) => (
-            <button
-              key={p.email}
-              onClick={() => setPersona(p)}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-lg border text-left transition-all",
-                persona.email === p.email
-                  ? "border-signal-500/60 bg-signal-500/8"
-                  : "border-line bg-ink-900/60 hover:border-ink-500"
-              )}
-            >
-              <span className="w-9 h-9 rounded-full bg-ink-700 flex items-center justify-center font-display font-bold text-signal-300">
-                {p.name.split(" ").map((w) => w[0]).join("")}
-              </span>
-              <span className="flex-1">
-                <span className="block text-sm text-fog-100 font-medium">{p.name}</span>
-                <span className="block text-[12px] text-fog-500 font-mono">{p.email}</span>
-              </span>
-              <Badge tone="fog">{p.title}</Badge>
-            </button>
-          ))}
+      {/* Google account chooser — Google-styled OAuth 2.0 account picker */}
+      {googleOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink-950/80 backdrop-blur-[3px]" onClick={() => setGoogleOpen(false)} />
+          <div className="relative w-[min(400px,94vw)] bg-white rounded-2xl shadow-2xl shadow-black/70 overflow-hidden reveal" style={{ ["--d" as string]: "0ms" }}>
+            {/* Google header */}
+            <div className="pt-7 pb-2 text-center">
+              <div className="flex justify-center">
+                <IconGoogle width={30} height={30} />
+              </div>
+              <h2 className="text-[21px] text-[#202124] mt-3 font-normal" style={{ fontFamily: "var(--font-body)" }}>
+                Choose an account
+              </h2>
+              <p className="text-[13.5px] text-[#5f6368] mt-0.5">
+                to continue to <span className="text-[#1a73e8]">FedShield</span>
+              </p>
+            </div>
+
+            {gisLive && (
+              <div className="mx-6 mb-2 px-3 py-2 rounded-lg bg-[#e6f4ea] text-[#137333] text-[11.5px] leading-snug">
+                Google One Tap is live — you can also pick an account from the browser prompt in the corner.
+              </div>
+            )}
+
+            {!addAccountStep ? (
+              <>
+                {/* accounts present on this system */}
+                <div className="mx-3 my-2 rounded-xl border border-[#dadce0] divide-y divide-[#e8eaed] max-h-[280px] overflow-y-auto">
+                  {deviceAccounts.map((a) => (
+                    <button
+                      key={a.email}
+                      onClick={() => void handleGoogleProfile({ name: a.name, email: a.email })}
+                      className="w-full flex items-center gap-3.5 px-4 py-3 text-left hover:bg-[#f6f8fc] transition-colors group"
+                    >
+                      <span
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[15px] font-medium shrink-0"
+                        style={{ background: avatarColor(a.email) }}
+                      >
+                        {a.name.trim()[0]?.toUpperCase() ?? "?"}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[14px] text-[#202124] truncate">{a.name}</span>
+                        <span className="block text-[12.5px] text-[#5f6368] truncate">{a.email}</span>
+                      </span>
+                      <span className="text-[10.5px] text-[#9aa0a6] font-mono uppercase tracking-wide opacity-0 group-hover:opacity-100 transition-opacity">
+                        on this device
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setAddAccountStep(true)}
+                    className="w-full flex items-center gap-3.5 px-4 py-3 text-left hover:bg-[#f6f8fc] transition-colors"
+                  >
+                    <span className="w-9 h-9 rounded-full border border-dashed border-[#bdc1c6] flex items-center justify-center text-[#5f6368] shrink-0">
+                      <svg viewBox="0 0 24 24" width={17} height={17} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    </span>
+                    <span className="text-[14px] text-[#202124]">Use another account</span>
+                  </button>
+                </div>
+
+                <p className="px-7 py-3 text-[11.5px] text-[#5f6368] leading-relaxed">
+                  To continue, Google will share your name, email address, and profile picture with FedShield.
+                  {GOOGLE_CLIENT_ID
+                    ? " Real OAuth via Google Identity Services is active."
+                    : " Demo consent screen — set VITE_GOOGLE_CLIENT_ID in .env to enable real Google One Tap with your system accounts."}
+                </p>
+              </>
+            ) : (
+              <>
+                {/* consent for a new account */}
+                <div className="px-7 py-4 space-y-3.5">
+                  <p className="text-[12.5px] text-[#5f6368] leading-snug">
+                    Sign in to the Google account you want to use with FedShield:
+                  </p>
+                  <label className="block">
+                    <span className="text-[11px] font-medium text-[#5f6368] uppercase tracking-wide block mb-1">Full name</span>
+                    <input
+                      value={gName}
+                      onChange={(e) => setGName(e.target.value)}
+                      placeholder="e.g. Priya Sharma"
+                      className="w-full border border-[#dadce0] rounded-lg px-3 py-2.5 text-[14px] text-[#202124] outline-none focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] font-medium text-[#5f6368] uppercase tracking-wide block mb-1">Google email</span>
+                    <input
+                      value={gEmail}
+                      onChange={(e) => setGEmail(e.target.value)}
+                      placeholder="you@gmail.com"
+                      type="email"
+                      className="w-full border border-[#dadce0] rounded-lg px-3 py-2.5 text-[14px] text-[#202124] outline-none focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8]"
+                    />
+                  </label>
+                  <button
+                    onClick={() => void authorizeNewAccount()}
+                    disabled={auth.busy}
+                    className="w-full py-2.5 rounded-lg bg-[#1a73e8] text-white text-[14px] font-medium hover:bg-[#1765cc] transition-colors disabled:opacity-50"
+                  >
+                    {auth.busy ? "Authorizing…" : "Authorize FedShield"}
+                  </button>
+                  <button onClick={() => setAddAccountStep(false)} className="w-full py-1 text-[12.5px] text-[#1a73e8] hover:underline">
+                    ← Back to account list
+                  </button>
+                </div>
+              </>
+            )}
+
+            <div className="flex items-center justify-between px-7 py-3 bg-[#f6f8fc] border-t border-[#e8eaed]">
+              <span className="text-[10.5px] text-[#9aa0a6] font-mono">OAuth 2.0 · scope: openid email profile</span>
+              <button onClick={() => setGoogleOpen(false)} className="text-[12px] text-[#5f6368] hover:text-[#202124] transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="flex gap-2.5 mt-5">
-          <Button variant="outline" className="flex-1" onClick={() => setGoogleOpen(false)}>
-            Cancel
-          </Button>
-          <Button className="flex-1" loading={auth.busy} onClick={handleGoogle}>
-            Authorize FedShield
-          </Button>
-        </div>
-      </Modal>
+      )}
     </div>
   );
 }
