@@ -35,3 +35,25 @@ export function consumePendingRun(): string | null {
   pendingRunId = null;
   return v;
 }
+
+type PredictListener = (runId: string) => void;
+const predictListeners = new Set<PredictListener>();
+let pendingPredictId: string | null = null;
+
+export function onPredictRequest(l: PredictListener): () => void {
+  predictListeners.add(l);
+  return () => {
+    predictListeners.delete(l);
+  };
+}
+
+export function requestPredict(runId: string) {
+  pendingPredictId = runId;
+  predictListeners.forEach((l) => l(runId));
+}
+
+export function consumePendingPredict(): string | null {
+  const v = pendingPredictId;
+  pendingPredictId = null;
+  return v;
+}

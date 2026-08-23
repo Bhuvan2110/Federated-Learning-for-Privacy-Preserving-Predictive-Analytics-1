@@ -20,6 +20,8 @@ convergence telemetry, centralized baselines) runs live in the browser via a rea
 | **Engine** | Logistic-regression models, full-batch SGD, **FedAvg** + **FedProx** (proximal term μ), Dirichlet non-IID partitions, partial participation, per-round server-side evaluation on a holdout set |
 | **Privacy** | Update **clipping** (‖Δw‖ ≤ C), **Gaussian mechanism** σ = (2C/n)·√(2 ln(1.25/δ))/ε, ε budget tracking (basic + √R composition), interactive noise-mechanism lab, **secure aggregation** with cancelling pairwise masks |
 | **Analytics** | Single-record predictions with probability, top feature contributions, latency; holdout metrics (accuracy, precision, recall, F1, AUC, log-loss), derived confusion matrix, centralized-vs-federated comparison, JSON exports |
+| **Prediction console** | An **LLM-style oracle**: select a *field-specific* trained model, then describe a case in plain language ("58yo, BP 165, cholesterol 250") — a schema-aware parser maps it onto the model's features and returns a prediction with confidence, top drivers, and imputation notes. Supports `/help /model /features /privacy /metrics /sample /clear`, a persistent prediction log, and batch CSV inference |
+| **Fields & upload** | Five particular fields — **Medical, Financial, Cybersecurity, Telecom, Energy** — each with a built-in dataset. Users can **upload a CSV** and assign it to a field; it's standardized on-device, becomes trainable in the Lab, and its resulting model joins that field's registry. Models used by the console are the **stored federated training results** (weights only, never raw data) |
 | **Dashboards** | Overview stats + convergence charts, client registry, dataset vault with local-only previews, privacy center, training history with per-round telemetry |
 
 ## Architecture
@@ -86,7 +88,10 @@ npm run build    # production build (dist/)
 1. **Skip for now** → Guest Mode (note the amber banner + locked exports).
 2. **Overview** → pre-seeded runs show federated vs centralized convergence.
 3. **Training Lab** → pick a dataset, set ε, toggle secure aggregation, start → watch packets flow
-   client → server, DP events in the console, live accuracy/F1/ε tiles.
-4. **Privacy Center** → drag ε and see the Gaussian noise widen; read the ε ledger and trade-off frontier.
-5. **Analytics** → run a prediction, inspect feature contributions and the confusion matrix.
-6. Register an account → exports and registry editing unlock.
+   client → server, DP events in the console, live accuracy/F1/ε tiles. The finished model is stored.
+4. **Prediction** → open the oracle, pick the Medical model, type “58yo, blood pressure 165, BMI 31,
+   cholesterol 250” → get a prediction with confidence + top drivers; try `/features` and `/privacy`.
+5. **Datasets** → upload a CSV, assign it to a field, then train it in the Lab — its model appears in that
+   field's prediction registry.
+6. **Privacy Center** → drag ε and see the Gaussian noise widen; read the ε ledger and trade-off frontier.
+7. Register an account → exports, dataset upload and registry editing unlock.

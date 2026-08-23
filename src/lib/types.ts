@@ -170,11 +170,68 @@ export interface PredictionResult {
 export type PageId =
   | "overview"
   | "lab"
+  | "predict"
   | "clients"
   | "datasets"
   | "privacy"
   | "analytics"
   | "history";
+
+/* ── Domains (particular fields) ──────────────────────────── */
+
+export type Domain = "medical" | "financial" | "cybersecurity" | "telecom" | "energy";
+
+export interface DomainDef {
+  id: Domain;
+  label: string;
+  short: string;
+  color: string;
+  blurb: string;
+}
+
+/* ── Custom (uploaded) datasets ───────────────────────────── */
+
+export interface CustomDatasetDef {
+  id: string;
+  meta: DatasetMeta & { custom: true };
+  domain: Domain;
+  X: number[];
+  raw: number[];
+  y: number[];
+  mean: number[];
+  std: number[];
+  uploadedAt: number;
+  fileName: string;
+}
+
+/* ── Prediction console ───────────────────────────────────── */
+
+export interface PredictionRecord {
+  id: string;
+  ts: number;
+  modelId: string;
+  modelName: string;
+  datasetId: string;
+  domain: Domain;
+  label: string;
+  probability: number;
+  input: Record<string, number>;
+  assumed: string[];
+}
+
+export interface ChatMsg {
+  id: string;
+  role: "user" | "oracle";
+  ts: number;
+  text: string;
+  kind?: "info" | "prediction" | "error" | "model";
+  prediction?: {
+    result: PredictionResult;
+    input: Record<string, number>;
+    assumed: string[];
+    record: PredictionRecord;
+  };
+}
 
 export interface Toast {
   id: number;

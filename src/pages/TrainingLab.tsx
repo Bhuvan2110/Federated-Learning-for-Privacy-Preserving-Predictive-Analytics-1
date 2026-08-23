@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "../lib/store";
 import { useAuth } from "../lib/auth";
-import { DATASETS, getDataset, partitionDataset, trainTestSplit } from "../lib/datasets";
+import { getDataset, isCustom, listDatasets, partitionDataset, trainTestSplit } from "../lib/datasets";
 import { defaultConfig, trainFederated } from "../lib/flEngine";
 import type { CancelToken } from "../lib/flEngine";
 import type { LogLine, Phase, RoundRecord, RunResult, TrainingConfig } from "../lib/types";
@@ -20,8 +20,9 @@ const SPEEDS = [
 ];
 
 export default function TrainingLab() {
-  const { addRun, toast, disabledClients, setPage } = useApp();
+  const { addRun, toast, disabledClients, setPage, customCount } = useApp();
   const { user } = useAuth();
+  const allDatasets = useMemo(() => listDatasets(), [customCount]); // eslint-disable-line react-hooks/exhaustive-deps
   const [config, setConfig] = useState<TrainingConfig>(() => defaultConfig("cardio"));
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -122,7 +123,7 @@ export default function TrainingLab() {
           <div>
             <div className="text-[11px] font-mono uppercase tracking-wider text-fog-500 mb-2">Dataset</div>
             <div className="space-y-1.5">
-              {DATASETS.map((d) => (
+              {allDatasets.map((d) => (
                 <button
                   key={d.id}
                   onClick={() => set("datasetId", d.id)}
@@ -136,7 +137,10 @@ export default function TrainingLab() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-[13px] font-medium text-fog-100">{d.name}</span>
-                    <Badge tone={config.datasetId === d.id ? "signal" : "fog"}>{d.sector}</Badge>
+                    <span className="flex items-center gap-1">
+                      {isCustom(d.id) && <Badge tone="ember">uploaded</Badge>}
+                      <Badge tone={config.datasetId === d.id ? "signal" : "fog"}>{d.sector}</Badge>
+                    </span>
                   </div>
                   <div className="text-[11px] font-mono text-fog-500 mt-0.5">
                     {d.nSamples.toLocaleString()} rows · {d.features.length} features

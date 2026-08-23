@@ -13,10 +13,11 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { defaultConfig, trainFederated } from "./flEngine";
-import type { PageId, RunResult, Toast } from "./types";
+import type { PageId, PredictionRecord, RunResult, Toast } from "./types";
 
 const K_RUNS = "fedshield.runs";
 const K_DISABLED = "fedshield.clients.disabled";
+const K_PREDS = "fedshield.predictions";
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -47,6 +48,11 @@ interface AppCtx {
   toast: (kind: Toast["kind"], msg: string) => void;
   dismissToast: (id: number) => void;
   seeding: boolean;
+  predictions: PredictionRecord[];
+  addPrediction: (p: PredictionRecord) => void;
+  clearPredictions: () => void;
+  customCount: number;
+  bumpCustom: () => void;
 }
 
 const Ctx = createContext<AppCtx | null>(null);
@@ -59,12 +65,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [seeding, setSeeding] = useState(false);
+  const [predictions, setPredictions] = useState<PredictionRecord[]>(() =>
+    readJson<PredictionRecord[]>(K_PREDS, [])
+  );
+  const [customCount, setCustomCount] = useState(0);
   const toastId = useRef(1);
   const seededRef = useRef(false);
 
   useEffect(() => {
     writeJson(K_RUNS, runs.slice(0, 24));
   }, [runs]);
+
+  useEffect(() => {
+    writeJson(K_PREDS, predictions.slice(0, 60));
+  }, [predictions]);
 
   useEffect(() => {
     writeJson(K_DISABLED, disabledClients);
@@ -99,6 +113,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ...prev, [datasetId]: next };
     });
   }, []);
+
+  const addPrediction = useCallback((p: PredictionRecord) => {
+    setPredictions((prev) => [p, ...prev].slice(0, 60));
+  }, []);
+
+  const clearPredictions = useCallback(() => setPredictions([]), []);
+
+  const bumpCustom = useCallback(() => setCustomCount((c) => c + 1), []);
 
   /* Seed two completed runs on first visit so every dashboard
      screen is populated before the user trains anything. */
@@ -149,8 +171,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast,
       dismissToast,
       seeding,
+      predictions,
+      addPrediction,
+      clearPredictions,
+      customCount,
+      bumpCustom,
     }),
-    [page, runs, addRun, deleteRun, disabledClients, toggleClient, toasts, toast, dismissToast, seeding]
+    [
+      page,
+      runs,
+      addRun,
+      deleteRun,
+      disabledClients,
+      toggleClient,
+      toasts,
+      toast,
+      dismissToast,
+      seeding,
+      predictions,
+      addPrediction,
+      clearPredictions,
+      customCount,
+      bumpCustom,
+    ]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

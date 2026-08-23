@@ -240,3 +240,52 @@ export const IconChevron = (props: P) => (
     <path d="m8 10 4 4 4-4" />
   </svg>
 );
+
+export const IconSend = (props: P) => (
+  <svg {...base(props)}>
+    <path d="M21 3 10.5 13.5M21 3l-6.8 18-3.7-7.5L3 9.8z" />
+  </svg>
+);
+
+export const IconSparkle = (props: P) => (
+  <svg {...base(props)}>
+    <path d="M12 4c.5 3.6 2.4 5.5 6 6-3.6.5-5.5 2.4-6 6-.5-3.6-2.4-5.5-6-6 3.6-.5 5.5-2.4 6-6z" />
+    <path d="M19 15.5c.2 1.5 1 2.3 2.5 2.5-1.5.2-2.3 1-2.5 2.5-.2-1.5-1-2.3-2.5-2.5 1.5-.2 2.3-1 2.5-2.5z" />
+  </svg>
+);
+
+export const IconUpload = (props: P) => (
+  <svg {...base(props)}>
+    <path d="M12 15V4M7.5 8.5 12 4l4.5 4.5" />
+    <path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" />
+  </svg>
+);
+
+export const IconPulse = (props: P) => (
+  <svg {...base(props)}>
+    <path d="M3 12h4l2.2-5.5L13 17l2.4-5H21" />
+  </svg>
+);
+
+export const IconCoins = (props: P) => (
+  <svg {...base(props)}>
+    <ellipse cx="9" cy="7.5" rx="6" ry="2.8" />
+    <path d="M3 7.5v5c0 1.5 2.7 2.8 6 2.8s6-1.3 6-2.8v-5" />
+    <path d="M3 12.5v4c0 1.5 2.7 2.8 6 2.8 1.2 0 2.4-.2 3.3-.5" />
+    <path d="M15 11.2c3 .2 6 1.4 6 2.9v4.4c0 1.4-2.5 2.5-5.5 2.7" />
+  </svg>
+);
+
+export const IconSignal = (props: P) => (
+  <svg {...base(props)}>
+    <path d="M5 19.5v-4M9.5 19.5v-8M14 19.5V7.5M18.5 19.5v-15" />
+  </svg>
+);
+
+export const IconTerminal = (props: P) => (
+  <svg {...base(props)}>
+    <rect x="3" y="4.5" width="18" height="15" rx="2" />
+    <path d="m7 9.5 3 3-3 3M12.5 15.5H17" />
+  </svg>
+);
+

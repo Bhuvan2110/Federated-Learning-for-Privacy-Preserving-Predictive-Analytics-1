@@ -4,10 +4,10 @@ import { useApp } from "../lib/store";
 import { useAuth } from "../lib/auth";
 import { getDatasetMeta } from "../lib/datasets";
 import { modelToJson } from "../lib/flEngine";
-import { requestRun } from "../lib/crosslink";
+import { requestPredict, requestRun } from "../lib/crosslink";
 import { LineChart } from "../components/charts";
 import { Badge, Button, EmptyState, LockPill, Modal, Panel, cn } from "../components/ui";
-import { IconChart, IconChevron, IconDownload, IconFlask, IconTrash } from "../components/icons";
+import { IconChart, IconChevron, IconDownload, IconFlask, IconSparkle, IconTrash } from "../components/icons";
 
 export default function History() {
   const { runs, deleteRun, setPage, toast } = useApp();
@@ -85,6 +85,16 @@ export default function History() {
                         className="w-8 h-8 rounded-md flex items-center justify-center text-fog-500 hover:text-signal-300 hover:bg-signal-500/10 transition-colors"
                       >
                         <IconChart width={15} height={15} />
+                      </button>
+                      <button
+                        title="Query in prediction console"
+                        onClick={() => {
+                          requestPredict(r.id);
+                          setPage("predict");
+                        }}
+                        className="w-8 h-8 rounded-md flex items-center justify-center text-fog-500 hover:text-signal-300 hover:bg-signal-500/10 transition-colors"
+                      >
+                        <IconSparkle width={15} height={15} />
                       </button>
                       {isGuest ? (
                         <span className="w-8 h-8 rounded-md flex items-center justify-center text-fog-700 cursor-not-allowed" title="Requires an account">

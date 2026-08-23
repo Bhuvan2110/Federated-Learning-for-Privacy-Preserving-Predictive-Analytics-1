@@ -16,11 +16,13 @@ import {
   IconMenu,
   IconNodes,
   IconShield,
+  IconSparkle,
   IconX,
 } from "./icons";
 import { Badge, cn } from "./ui";
 import Overview from "../pages/Overview";
 import TrainingLab from "../pages/TrainingLab";
+import Predicting from "../pages/Predicting";
 import Clients from "../pages/Clients";
 import Datasets from "../pages/Datasets";
 import Privacy from "../pages/Privacy";
@@ -33,6 +35,7 @@ const NAV: { group: string; items: { id: PageId; label: string; icon: (p: { widt
     items: [
       { id: "overview", label: "Overview", icon: (p) => <IconGrid {...p} /> },
       { id: "lab", label: "Training Lab", icon: (p) => <IconFlask {...p} /> },
+      { id: "predict", label: "Prediction", icon: (p) => <IconSparkle {...p} /> },
       { id: "clients", label: "Clients", icon: (p) => <IconNodes {...p} /> },
       { id: "datasets", label: "Datasets", icon: (p) => <IconDatabase {...p} /> },
     ],
@@ -50,6 +53,7 @@ const NAV: { group: string; items: { id: PageId; label: string; icon: (p: { widt
 const TITLES: Record<PageId, { title: string; sub: string }> = {
   overview: { title: "Operations Overview", sub: "Global model health, privacy budget and federation activity" },
   lab: { title: "Federated Learning Lab", sub: "Configure, run and monitor privacy-preserving training rounds" },
+  predict: { title: "Prediction Console", sub: "Query a field-specific trained model in natural language" },
   clients: { title: "Client Registry", sub: "The decentralized nodes that keep raw data on-premise" },
   datasets: { title: "Dataset Vault", sub: "Local-only data assets used by the federation" },
   privacy: { title: "Privacy Center", sub: "Differential privacy, secure aggregation and trade-off analysis" },
@@ -123,6 +127,7 @@ export default function Shell() {
   const pageEl = {
     overview: <Overview />,
     lab: <TrainingLab />,
+    predict: <Predicting />,
     clients: <Clients />,
     datasets: <Datasets />,
     privacy: <Privacy />,

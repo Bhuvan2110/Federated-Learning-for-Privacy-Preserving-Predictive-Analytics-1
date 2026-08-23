@@ -162,9 +162,157 @@ export const DATASETS: DatasetMeta[] = [
       f("ttl", "TTL anomaly", 0, 1, 2),
     ],
   },
+  {
+    id: "churn",
+    name: "Telecom Customer Churn",
+    sector: "Telecom",
+    tag: "Binary classification",
+    description:
+      "Churn risk model trained across 5 competing carriers. Call-detail records are commercially sensitive, so each carrier trains locally and only shares masked model updates.",
+    nSamples: 5500,
+    positiveRate: 0.26,
+    seed: 6060,
+    positiveLabel: "Churn",
+    negativeLabel: "Retained",
+    features: [
+      f("tenure", "Tenure", 1, 72, 0, "mo"),
+      f("monthly", "Monthly charges", 18, 120, 1, "$"),
+      f("total", "Total charges", 20, 8900, 0, "$"),
+      f("contract", "Contract length", 1, 24, 0, "mo"),
+      f("tickets", "Support tickets", 0, 15, 0),
+      f("services", "Service count", 1, 8, 0),
+      f("data_gb", "Data usage", 0, 100, 1, "GB"),
+      f("discount", "Discount", 0, 40, 0, "%"),
+      f("fiber", "Fiber optic", 0, 1, 0),
+      f("autopay", "Auto-pay enrolled", 0, 1, 0),
+    ],
+  },
+  {
+    id: "gridfraud",
+    name: "Smart Grid Fraud",
+    sector: "Energy",
+    tag: "Binary classification",
+    description:
+      "Meter-tampering and energy-theft detection across 4 regional grid operators. Consumption profiles are privacy-sensitive, so operators federate an anomaly model without pooling smart-meter data.",
+    nSamples: 4800,
+    positiveRate: 0.12,
+    seed: 7777,
+    positiveLabel: "Tampering",
+    negativeLabel: "Normal",
+    features: [
+      f("kwh", "Consumption", 0, 2000, 0, "kWh"),
+      f("vdev", "Voltage deviation", 0, 15, 1, "%"),
+      f("tamper", "Tamper events", 0, 5, 0),
+      f("night", "Night ratio", 0, 1, 2),
+      f("mismatch", "Billing mismatch", 0, 1, 2),
+      f("peak", "Peak load ratio", 0, 3, 2),
+      f("age_yr", "Connection age", 0, 30, 0, "yrs"),
+      f("outages", "Outage reports", 0, 10, 0),
+      f("load_var", "Load variance", 0, 1, 2),
+    ],
+  },
 ];
 
+/* ── Domain (particular-field) system ─────────────────────── */
+
+import type { CustomDatasetDef, Domain, DomainDef, GeneratedDataset as _GD } from "./types";
+
+export const DOMAINS: DomainDef[] = [
+  { id: "medical", label: "Medical", short: "MED", color: "#e8798f", blurb: "Clinical & cardiovascular risk" },
+  { id: "financial", label: "Financial", short: "FIN", color: "#f0b454", blurb: "Credit, fraud & lending risk" },
+  { id: "cybersecurity", label: "Cybersecurity", short: "SEC", color: "#58b7f0", blurb: "Intrusion & threat detection" },
+  { id: "telecom", label: "Telecom", short: "TEL", color: "#9ad15c", blurb: "Churn & network analytics" },
+  { id: "energy", label: "Energy", short: "ENR", color: "#43dec9", blurb: "Grid fraud & metering" },
+];
+
+/** Which particular field a built-in dataset belongs to. */
+const DOMAIN_OF: Record<string, Domain> = {
+  cardio: "medical",
+  credit: "financial",
+  intrusion: "cybersecurity",
+  churn: "telecom",
+  gridfraud: "energy",
+};
+
+export function domainOf(datasetId: string): Domain {
+  const custom = customMap.get(datasetId);
+  if (custom) return custom.domain;
+  return DOMAIN_OF[datasetId] ?? "medical";
+}
+
+export function domainDef(id: Domain): DomainDef {
+  return DOMAINS.find((d) => d.id === id) ?? DOMAINS[0];
+}
+
+/* ── Custom (uploaded) dataset registry ───────────────────── */
+
+export const customMap = new Map<string, CustomDatasetDef>();
+export const customGenerated = new Map<string, _GD>();
+
+const K_CUSTOM = "fedshield.custom.datasets";
+
+export function loadCustomDatasets(): CustomDatasetDef[] {
+  try {
+    const raw = localStorage.getItem(K_CUSTOM);
+    const list = raw ? (JSON.parse(raw) as CustomDatasetDef[]) : [];
+    customMap.clear();
+    customGenerated.clear();
+    for (const def of list) {
+      customMap.set(def.id, def);
+      customGenerated.set(def.id, defToGenerated(def));
+    }
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+function defToGenerated(def: CustomDatasetDef): _GD {
+  return {
+    meta: def.meta,
+    X: Float64Array.from(def.X),
+    raw: Float64Array.from(def.raw),
+    y: Uint8Array.from(def.y),
+    mean: Float64Array.from(def.mean),
+    std: Float64Array.from(def.std),
+  };
+}
+
+export function registerCustomDataset(def: CustomDatasetDef): boolean {
+  if (customMap.size >= 6) return false; // keep localStorage quota safe
+  customMap.set(def.id, def);
+  customGenerated.set(def.id, defToGenerated(def));
+  persistCustom();
+  return true;
+}
+
+export function removeCustomDataset(id: string): boolean {
+  customMap.delete(id);
+  customGenerated.delete(id);
+  persistCustom();
+  return true;
+}
+
+function persistCustom() {
+  try {
+    localStorage.setItem(K_CUSTOM, JSON.stringify(Array.from(customMap.values())));
+  } catch {
+    /* quota exceeded — keep in memory only */
+  }
+}
+
+/** All dataset metas: built-in + uploaded custom. */
+export function listDatasets(): DatasetMeta[] {
+  return [...DATASETS, ...Array.from(customMap.values()).map((d) => d.meta)];
+}
+
+export function isCustom(id: string): boolean {
+  return customMap.has(id);
+}
+
 export function getDatasetMeta(id: string): DatasetMeta {
+  const custom = customMap.get(id);
+  if (custom) return custom.meta;
   return DATASETS.find((d) => d.id === id) ?? DATASETS[0];
 }
 
@@ -173,6 +321,10 @@ export function getDatasetMeta(id: string): DatasetMeta {
 const cache = new Map<string, GeneratedDataset>();
 
 export function getDataset(id: string): GeneratedDataset {
+  // Uploaded custom datasets are pre-standardized at registration time.
+  const custom = customGenerated.get(id);
+  if (custom) return custom;
+
   const cached = cache.get(id);
   if (cached) return cached;
   const meta = getDatasetMeta(id);
@@ -283,6 +435,34 @@ const ORGS: Record<string, { org: string; region: string }[]> = {
     { org: "EdgeNode London", region: "EU-West" },
     { org: "EdgeNode Seoul", region: "APAC-East" },
     { org: "EdgeNode Bahrain", region: "MEA-Gulf" },
+  ],
+  churn: [
+    { org: "Helio Mobile", region: "EU-West" },
+    { org: "Northwind Telecom", region: "US-East" },
+    { org: "Vantage Fibre", region: "EU-Central" },
+    { org: "Coastal Wireless", region: "US-West" },
+    { org: "Asahi Net K.K.", region: "APAC" },
+    { org: "Polar Circle Oy", region: "EU-North" },
+    { org: "Andina Telco", region: "LATAM" },
+    { org: "Savanna Connect", region: "MEA" },
+    { org: "Boreal Broadband", region: "CA-Central" },
+    { org: "Deccan Cellular", region: "APAC-South" },
+    { org: "Reef Communications", region: "OCE" },
+    { org: "Dune Networks", region: "MEA-Gulf" },
+  ],
+  gridfraud: [
+    { org: "VoltGrid North", region: "EU-North" },
+    { org: "Amperage Utilities", region: "US-East" },
+    { org: "Rhein Energie AG", region: "EU-Central" },
+    { org: "Pacific Power Co-op", region: "US-West" },
+    { org: "Kansai Grid K.K.", region: "APAC" },
+    { org: "Fjord Energi", region: "EU-West" },
+    { org: "Cordillera Eléctrica", region: "LATAM" },
+    { org: "Kalahari Power", region: "MEA" },
+    { org: "Maple Hydro", region: "CA-Central" },
+    { org: "Ganges Distribution", region: "APAC-South" },
+    { org: "Outback Energy", region: "OCE" },
+    { org: "Gulf Power Authority", region: "MEA-Gulf" },
   ],
 };
 
