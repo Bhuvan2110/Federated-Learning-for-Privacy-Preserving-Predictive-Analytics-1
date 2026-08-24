@@ -15,6 +15,7 @@ import {
   IconLogout,
   IconMenu,
   IconNodes,
+  IconPulse,
   IconShield,
   IconSparkle,
   IconX,
@@ -29,6 +30,7 @@ import Privacy from "../pages/Privacy";
 import Analytics from "../pages/Analytics";
 import History from "../pages/History";
 import VerifyPortal from "../pages/VerifyPortal";
+import HealthCheck from "../pages/HealthCheck";
 
 const NAV: { group: string; items: { id: PageId; label: string; icon: (p: { width: number; height: number }) => ReactNode }[] }[] = [
   {
@@ -42,11 +44,12 @@ const NAV: { group: string; items: { id: PageId; label: string; icon: (p: { widt
     ],
   },
   {
-    group: "Governance",
+    group: "Governance & Health",
     items: [
       { id: "privacy", label: "Privacy Center", icon: (p) => <IconShield {...p} /> },
       { id: "analytics", label: "Analytics", icon: (p) => <IconChart {...p} /> },
       { id: "history", label: "History", icon: (p) => <IconHistory {...p} /> },
+      { id: "health", label: "System Health", icon: (p) => <IconPulse {...p} /> },
     ],
   },
 ];
@@ -60,6 +63,7 @@ const TITLES: Record<PageId, { title: string; sub: string }> = {
   privacy: { title: "Privacy Center", sub: "Differential privacy, secure aggregation and trade-off analysis" },
   analytics: { title: "Predictive Analytics", sub: "Inference with the trained global model — no raw data required" },
   history: { title: "Training History", sub: "Every federated run with telemetry and exportable artifacts" },
+  health: { title: "System Health & Diagnostics", sub: "Automated API endpoint tests, engine convergence checks & step-by-step fix recommendations" },
 };
 
 export default function Shell() {
@@ -171,6 +175,7 @@ export default function Shell() {
       privacy: <Privacy />,
       analytics: <Analytics />,
       history: <History />,
+      health: <HealthCheck />,
     }[page]
   );
 

@@ -175,7 +175,8 @@ export type PageId =
   | "datasets"
   | "privacy"
   | "analytics"
-  | "history";
+  | "history"
+  | "health";
 
 /* ── Domains (particular fields) ──────────────────────────── */
 

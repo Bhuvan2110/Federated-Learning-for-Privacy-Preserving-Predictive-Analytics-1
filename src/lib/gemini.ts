@@ -318,7 +318,7 @@ const KB: KbEntry[] = [
 • **Target**: Failure Risk (0: Normal, 1: Outage Risk).`,
   },
   {
-    keys: ["pages", "explain website", "features", "navigation", "overview", "lab", "privacy", "analytics", "history"],
+    keys: ["pages", "explain website", "features", "navigation", "overview", "lab", "privacy", "analytics", "history", "health", "system health", "diagnostics"],
     answer: (ctx) =>
       `**FedShield Platform Navigation Guide:**
 1. **Overview** (\`overview\`): Operations dashboard showing global accuracy, privacy budget spent (ε), and node topology.
@@ -329,6 +329,7 @@ const KB: KbEntry[] = [
 6. **Privacy Center** (\`privacy\`): Differential Privacy (ε, δ)-DP math, clipping bound C, noise scale σ.
 7. **Analytics** (\`analytics\`): Confusion matrices, ROC curves, and precision-recall trade-offs.
 8. **History** (\`history\`): View past training runs, export model JSON weights, and generate scannable QR code certificates.
+9. **System Health** (\`health\`): Automated API diagnostics, engine micro-simulations, and step-by-step fix recommendations.
 
 *Currently viewing: \`${ctx.page}\`*`,
   },
