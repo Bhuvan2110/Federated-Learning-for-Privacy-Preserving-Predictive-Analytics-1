@@ -41,6 +41,7 @@ const TICKER = [
 ];
 
 const GOOGLE_PERSONAS: GoogleAccount[] = [
+  { name: "BHUVAN S", email: "1nt23is054.bhuvan@nmit.ac.in", lastUsed: Date.now() },
   { name: "Aisha Karimi", email: "aisha.karimi@gmail.com", lastUsed: 0 },
   { name: "Daniel Okafor", email: "d.okafor@gmail.com", lastUsed: 0 },
 ];
@@ -529,120 +530,121 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Google account chooser — Google-styled OAuth 2.0 account picker */}
+      {/* Google account chooser — Google-styled OAuth 2.0 account picker (Dark Theme v3 matching screenshot) */}
       {googleOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-ink-950/80 backdrop-blur-[3px]" onClick={() => setGoogleOpen(false)} />
-          <div className="relative w-[min(400px,94vw)] bg-white rounded-2xl shadow-2xl shadow-black/70 overflow-hidden reveal" style={{ ["--d" as string]: "0ms" }}>
-            {/* Google header */}
-            <div className="pt-7 pb-2 text-center">
-              <div className="flex justify-center">
-                <IconGoogle width={30} height={30} />
-              </div>
-              <h2 className="text-[21px] text-[#202124] mt-3 font-normal" style={{ fontFamily: "var(--font-body)" }}>
-                Choose an account
-              </h2>
-              <p className="text-[13.5px] text-[#5f6368] mt-0.5">
-                to continue to <span className="text-[#1a73e8]">FedShield</span>
-              </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0f0f10]/85 backdrop-blur-sm">
+          <div className="relative w-[min(840px,96vw)] bg-[#1e1f20] border border-[#3c4043] rounded-3xl p-6 sm:p-10 shadow-2xl reveal text-[#e8eaed]" style={{ ["--d" as string]: "0ms" }}>
+            {/* Top Bar: Google G logo & Sign in with Google */}
+            <div className="flex items-center gap-3 pb-6 border-b border-[#3c4043]">
+              <IconGoogle width={22} height={22} />
+              <span className="text-[15px] font-medium text-[#e8eaed]">Sign in with Google</span>
+              <button
+                onClick={() => setGoogleOpen(false)}
+                className="ml-auto text-[#9aa0a6] hover:text-[#e8eaed] transition-colors p-1"
+                title="Close"
+              >
+                ✕
+              </button>
             </div>
 
-            {gisLive && (
-              <div className="mx-6 mb-2 px-3 py-2 rounded-lg bg-[#e6f4ea] text-[#137333] text-[11.5px] leading-snug">
-                Google One Tap is live — you can also pick an account from the browser prompt in the corner.
-              </div>
-            )}
-
-            {!addAccountStep ? (
-              <>
-                {/* accounts present on this system */}
-                <div className="mx-3 my-2 rounded-xl border border-[#dadce0] divide-y divide-[#e8eaed] max-h-[280px] overflow-y-auto">
-                  {deviceAccounts.map((a) => (
-                    <button
-                      key={a.email}
-                      onClick={() => void handleGoogleProfile({ name: a.name, email: a.email })}
-                      className="w-full flex items-center gap-3.5 px-4 py-3 text-left hover:bg-[#f6f8fc] transition-colors group"
-                    >
-                      <span
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[15px] font-medium shrink-0"
-                        style={{ background: avatarColor(a.email) }}
-                      >
-                        {a.name.trim()[0]?.toUpperCase() ?? "?"}
-                      </span>
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-[14px] text-[#202124] truncate">{a.name}</span>
-                        <span className="block text-[12.5px] text-[#5f6368] truncate">{a.email}</span>
-                      </span>
-                      <span className="text-[10.5px] text-[#9aa0a6] font-mono uppercase tracking-wide opacity-0 group-hover:opacity-100 transition-opacity">
-                        on this device
-                      </span>
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => setAddAccountStep(true)}
-                    className="w-full flex items-center gap-3.5 px-4 py-3 text-left hover:bg-[#f6f8fc] transition-colors"
-                  >
-                    <span className="w-9 h-9 rounded-full border border-dashed border-[#bdc1c6] flex items-center justify-center text-[#5f6368] shrink-0">
-                      <svg viewBox="0 0 24 24" width={17} height={17} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
-                        <path d="M12 5v14M5 12h14" />
-                      </svg>
-                    </span>
-                    <span className="text-[14px] text-[#202124]">Use another account</span>
-                  </button>
-                </div>
-
-                <p className="px-7 py-3 text-[11.5px] text-[#5f6368] leading-relaxed">
-                  To continue, Google will share your name, email address, and profile picture with FedShield.
-                  {GOOGLE_CLIENT_ID
-                    ? " Real OAuth via Google Identity Services is active."
-                    : " Demo consent screen — set VITE_GOOGLE_CLIENT_ID in .env to enable real Google One Tap with your system accounts."}
+            <div className="grid md:grid-cols-2 gap-8 pt-8">
+              {/* Left Column: Heading & Project context */}
+              <div>
+                <h2 className="text-[34px] sm:text-[38px] font-normal leading-tight text-[#e8eaed] font-display">
+                  Choose an account
+                </h2>
+                <p className="text-[16px] text-[#9aa0a6] mt-3">
+                  to continue to <span className="text-[#a8c7fa] font-medium">FedShield</span>
                 </p>
-              </>
-            ) : (
-              <>
-                {/* consent for a new account */}
-                <div className="px-7 py-4 space-y-3.5">
-                  <p className="text-[12.5px] text-[#5f6368] leading-snug">
-                    Sign in to the Google account you want to use with FedShield:
-                  </p>
-                  <label className="block">
-                    <span className="text-[11px] font-medium text-[#5f6368] uppercase tracking-wide block mb-1">Full name</span>
-                    <input
-                      value={gName}
-                      onChange={(e) => setGName(e.target.value)}
-                      placeholder="e.g. Priya Sharma"
-                      className="w-full border border-[#dadce0] rounded-lg px-3 py-2.5 text-[14px] text-[#202124] outline-none focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8]"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-[11px] font-medium text-[#5f6368] uppercase tracking-wide block mb-1">Google email</span>
-                    <input
-                      value={gEmail}
-                      onChange={(e) => setGEmail(e.target.value)}
-                      placeholder="you@gmail.com"
-                      type="email"
-                      className="w-full border border-[#dadce0] rounded-lg px-3 py-2.5 text-[14px] text-[#202124] outline-none focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8]"
-                    />
-                  </label>
-                  <button
-                    onClick={() => void authorizeNewAccount()}
-                    disabled={auth.busy}
-                    className="w-full py-2.5 rounded-lg bg-[#1a73e8] text-white text-[14px] font-medium hover:bg-[#1765cc] transition-colors disabled:opacity-50"
-                  >
-                    {auth.busy ? "Authorizing…" : "Authorize FedShield"}
-                  </button>
-                  <button onClick={() => setAddAccountStep(false)} className="w-full py-1 text-[12.5px] text-[#1a73e8] hover:underline">
-                    ← Back to account list
-                  </button>
-                </div>
-              </>
-            )}
+                {gisLive && (
+                  <div className="mt-6 p-3 rounded-xl bg-[#0c2d1c] border border-[#137333] text-[#81c995] text-[12px] leading-relaxed">
+                    Google One Tap Active — you can also select your account from the browser prompt.
+                  </div>
+                )}
+              </div>
 
-            <div className="flex items-center justify-between px-7 py-3 bg-[#f6f8fc] border-t border-[#e8eaed]">
-              <span className="text-[10.5px] text-[#9aa0a6] font-mono">OAuth 2.0 · scope: openid email profile</span>
-              <button onClick={() => setGoogleOpen(false)} className="text-[12px] text-[#5f6368] hover:text-[#202124] transition-colors">
-                Cancel
-              </button>
+              {/* Right Column: Account list & options */}
+              <div>
+                {!addAccountStep ? (
+                  <div className="space-y-1">
+                    <div className="rounded-2xl border border-[#3c4043] divide-y divide-[#3c4043] overflow-hidden bg-[#131314]">
+                      {deviceAccounts.map((a) => (
+                        <button
+                          key={a.email}
+                          onClick={() => void handleGoogleProfile({ name: a.name, email: a.email })}
+                          className="w-full flex items-center gap-4 px-4 py-3.5 text-left hover:bg-[#28292a] transition-colors group"
+                        >
+                          <span
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-[#f1f3f4] text-lg font-medium shrink-0 shadow-inner"
+                            style={{ background: avatarColor(a.email) }}
+                          >
+                            {a.name.trim()[0]?.toUpperCase() ?? "B"}
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-[15px] font-medium text-[#e8eaed] truncate">{a.name}</span>
+                            <span className="block text-[13px] text-[#9aa0a6] truncate">{a.email}</span>
+                          </span>
+                        </button>
+                      ))}
+
+                      <button
+                        onClick={() => setAddAccountStep(true)}
+                        className="w-full flex items-center gap-4 px-4 py-3.5 text-left hover:bg-[#28292a] transition-colors"
+                      >
+                        <span className="w-10 h-10 rounded-full border border-[#5f6368] flex items-center justify-center text-[#e8eaed] shrink-0">
+                          <span className="text-lg">👤</span>
+                        </span>
+                        <span className="text-[15px] font-medium text-[#e8eaed]">Use another account</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 bg-[#131314] p-5 rounded-2xl border border-[#3c4043]">
+                    <p className="text-[13px] text-[#9aa0a6]">
+                      Enter the Google account details to authorize FedShield:
+                    </p>
+                    <div>
+                      <label className="block text-[11px] font-medium uppercase tracking-wider text-[#9aa0a6] mb-1">Full Name</label>
+                      <input
+                        value={gName}
+                        onChange={(e) => setGName(e.target.value)}
+                        placeholder="BHUVAN S"
+                        className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-3.5 py-2.5 text-[14px] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium uppercase tracking-wider text-[#9aa0a6] mb-1">Google Email</label>
+                      <input
+                        value={gEmail}
+                        onChange={(e) => setGEmail(e.target.value)}
+                        placeholder="1nt23is054.bhuvan@nmit.ac.in"
+                        type="email"
+                        className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-3.5 py-2.5 text-[14px] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <button onClick={() => setAddAccountStep(false)} className="px-4 py-2 rounded-xl border border-[#5f6368] text-[13px] text-[#9aa0a6] hover:text-[#e8eaed]">
+                        Cancel
+                      </button>
+                      <button onClick={() => void authorizeNewAccount()} disabled={auth.busy} className="flex-1 py-2 rounded-xl bg-[#a8c7fa] text-[#040e29] font-semibold text-[13.5px] hover:bg-[#c2e7ff] transition-colors">
+                        Authorize
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer matching Google v3 OAuth footer */}
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-8 mt-6 border-t border-[#3c4043] text-[12px] text-[#9aa0a6]">
+              <div className="flex items-center gap-1 cursor-pointer hover:text-[#e8eaed]">
+                English (United States) <span className="text-[10px]">▼</span>
+              </div>
+              <div className="flex items-center gap-6">
+                <button className="hover:text-[#e8eaed] transition-colors">Help</button>
+                <button className="hover:text-[#e8eaed] transition-colors">Privacy</button>
+                <button className="hover:text-[#e8eaed] transition-colors">Terms</button>
+              </div>
             </div>
           </div>
         </div>
