@@ -110,29 +110,45 @@ export default function AuthPage() {
   const [addAccountStep, setAddAccountStep] = useState(false);
   const [gName, setGName] = useState("");
   const [gEmail, setGEmail] = useState("");
+  const [gPassword, setGPassword] = useState("");
   const [gisLive, setGisLive] = useState(false);
 
   const [selectedGoogleAcc, setSelectedGoogleAcc] = useState<{ name: string; email: string } | null>(null);
   const [googleOtp, setGoogleOtp] = useState("");
   const [googleOtpCode, setGoogleOtpCode] = useState("");
+  const [verifyPassword, setVerifyPassword] = useState("");
+  const [verifyMethod, setVerifyMethod] = useState<"otp" | "password">("otp");
   const [otpStep, setOtpStep] = useState(false);
   const [otpErr, setOtpErr] = useState<string | null>(null);
+  const [showSimulatedInbox, setShowSimulatedInbox] = useState(false);
 
   const startGoogleOtpVerification = (profile: { name: string; email: string }) => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setSelectedGoogleAcc(profile);
     setGoogleOtpCode(code);
     setGoogleOtp("");
+    setVerifyPassword("");
     setOtpErr(null);
+    setVerifyMethod("otp");
+    setShowSimulatedInbox(false);
     setOtpStep(true);
   };
 
   const confirmGoogleOtpAndSignIn = async () => {
     if (!selectedGoogleAcc) return;
-    if (googleOtp.trim() !== googleOtpCode) {
-      setOtpErr("Invalid 6-digit verification code. Check the code sent to your email.");
-      return;
+
+    if (verifyMethod === "password") {
+      if (verifyPassword.trim().length < 6) {
+        setOtpErr("Please enter a valid Google Account password.");
+        return;
+      }
+    } else {
+      if (googleOtp.trim() !== googleOtpCode) {
+        setOtpErr("Invalid 6-digit verification code. Please check the code sent to your Gmail inbox.");
+        return;
+      }
     }
+
     setOtpErr(null);
     await handleGoogleProfile(selectedGoogleAcc);
     setOtpStep(false);
@@ -164,11 +180,13 @@ export default function AuthPage() {
 
   const authorizeNewAccount = () => {
     const emailErr = validateEmail(gEmail);
-    const nameErr = gName.trim().length < 2 ? "Enter the account holder's name." : null;
-    if (emailErr || nameErr) {
-      setFormErr(emailErr ?? nameErr);
+    const nameErr = gName.trim().length < 2 ? "Enter the account holder's full name." : null;
+    const passErr = gPassword.trim().length < 6 ? "Enter your Google Account password (minimum 6 characters)." : null;
+    if (emailErr || nameErr || passErr) {
+      setFormErr(emailErr ?? nameErr ?? passErr);
       return;
     }
+    setFormErr(null);
     startGoogleOtpVerification({ name: gName.trim(), email: gEmail.trim() });
   };
 
@@ -603,27 +621,71 @@ export default function AuthPage() {
               {/* Right Column: Account list / Add Account / OTP Verification */}
               <div>
                 {otpStep ? (
-                  /* ── 2-Step Security Verification OTP Step ── */
+                  /* ── 2-Step Security Verification OTP / Password Step ── */
                   <div className="space-y-4 bg-[#131314] p-5 rounded-2xl border border-[#3c4043] reveal">
-                    {/* Simulated Google Security Inbox Banner */}
-                    <div className="p-3.5 rounded-xl bg-[#0c2d1c] border border-[#137333] text-[#81c995] text-[12.5px] space-y-1.5">
-                      <div className="font-semibold flex items-center justify-between">
-                        <span>✉️ Google Security Inbox · Live</span>
+                    {/* Method Selector Tabs */}
+                    <div className="flex rounded-xl bg-[#1e1f20] border border-[#3c4043] p-1 text-[12px]">
+                      <button
+                        type="button"
+                        onClick={() => { setVerifyMethod("otp"); setOtpErr(null); }}
+                        className={cn(
+                          "flex-1 py-1.5 rounded-lg font-medium transition-all",
+                          verifyMethod === "otp" ? "bg-[#a8c7fa] text-[#040e29]" : "text-[#9aa0a6] hover:text-[#e8eaed]"
+                        )}
+                      >
+                        ✉️ Gmail Security Code
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setVerifyMethod("password"); setOtpErr(null); }}
+                        className={cn(
+                          "flex-1 py-1.5 rounded-lg font-medium transition-all",
+                          verifyMethod === "password" ? "bg-[#a8c7fa] text-[#040e29]" : "text-[#9aa0a6] hover:text-[#e8eaed]"
+                        )}
+                      >
+                        🔒 Account Password
+                      </button>
+                    </div>
+
+                    {/* Email Security Notice */}
+                    <div className="p-3 rounded-xl bg-[#1e1f20] border border-[#3c4043] text-[12px] text-[#e8eaed] space-y-1">
+                      <div className="flex items-center justify-between font-semibold text-[#81c995]">
+                        <span>🛡️ Google Security Protection</span>
+                        <span className="text-[10.5px] font-mono uppercase bg-[#0c2d1c] px-2 py-0.5 rounded text-[#81c995]">
+                          {verifyMethod === "otp" ? "Code Sent" : "Password Required"}
+                        </span>
+                      </div>
+                      <p className="text-[#9aa0a6] text-[11.5px] leading-relaxed">
+                        {verifyMethod === "otp"
+                          ? `A 6-digit security code has been sent to ${selectedGoogleAcc?.email}. The code is NOT displayed on screen to prevent unauthorized access.`
+                          : `Enter your Google Account password for ${selectedGoogleAcc?.email} to confirm identity ownership.`}
+                      </p>
+                    </div>
+
+                    {/* Dev Testing Simulated Inbox Accordion */}
+                    {verifyMethod === "otp" && (
+                      <div>
                         <button
                           type="button"
-                          onClick={() => setGoogleOtp(googleOtpCode)}
-                          className="text-[11.5px] font-mono text-[#a8c7fa] hover:underline underline-offset-2"
+                          onClick={() => setShowSimulatedInbox((s) => !s)}
+                          className="text-[11px] font-mono text-[#a8c7fa] hover:underline flex items-center gap-1"
                         >
-                          Auto-fill code ⚡
+                          📨 {showSimulatedInbox ? "Hide Simulated Gmail Inbox" : "Inspect Simulated Gmail Inbox (Dev Testing)"}
                         </button>
+                        {showSimulatedInbox && (
+                          <div className="mt-2 p-3 rounded-xl bg-[#0c2d1c] border border-[#137333] text-[#81c995] text-[12px] space-y-1 reveal">
+                            <div className="font-semibold text-white">From: Google Accounts Security (no-reply@accounts.google.com)</div>
+                            <div>Subject: FedShield 2-Step Verification Code</div>
+                            <div className="pt-1 text-[#e8eaed]">
+                              Your 6-digit security code is:{" "}
+                              <span className="font-mono font-bold text-lg text-white bg-[#071f13] px-2.5 py-0.5 rounded border border-[#137333]">
+                                {googleOtpCode}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="text-[#e8eaed]">
-                        Verification Security Code for <span className="font-mono text-[#a8c7fa]">{selectedGoogleAcc?.email}</span>:
-                      </div>
-                      <div className="font-mono font-bold text-[22px] tracking-[0.25em] text-[#81c995] bg-[#071f13] px-3 py-1.5 rounded-lg border border-[#137333]/80 text-center select-all">
-                        {googleOtpCode}
-                      </div>
-                    </div>
+                    )}
 
                     {otpErr && (
                       <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[12px]">
@@ -631,20 +693,37 @@ export default function AuthPage() {
                       </div>
                     )}
 
-                    <div>
-                      <label className="block text-[11px] font-mono uppercase tracking-wider text-[#9aa0a6] mb-1.5">
-                        Enter 6-digit Code
-                      </label>
-                      <input
-                        value={googleOtp}
-                        onChange={(e) => setGoogleOtp(e.target.value.replace(/\D/g, ""))}
-                        placeholder="••••••"
-                        maxLength={6}
-                        autoFocus
-                        onKeyDown={(e) => e.key === "Enter" && void confirmGoogleOtpAndSignIn()}
-                        className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-4 py-3 text-center font-mono font-bold text-xl tracking-[0.3em] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
-                      />
-                    </div>
+                    {verifyMethod === "otp" ? (
+                      <div>
+                        <label className="block text-[11px] font-mono uppercase tracking-wider text-[#9aa0a6] mb-1.5">
+                          Enter 6-digit Security Code
+                        </label>
+                        <input
+                          value={googleOtp}
+                          onChange={(e) => setGoogleOtp(e.target.value.replace(/\D/g, ""))}
+                          placeholder="••••••"
+                          maxLength={6}
+                          autoFocus
+                          onKeyDown={(e) => e.key === "Enter" && void confirmGoogleOtpAndSignIn()}
+                          className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-4 py-3 text-center font-mono font-bold text-xl tracking-[0.3em] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-[11px] font-mono uppercase tracking-wider text-[#9aa0a6] mb-1.5">
+                          Google Account Password
+                        </label>
+                        <input
+                          type="password"
+                          value={verifyPassword}
+                          onChange={(e) => setVerifyPassword(e.target.value)}
+                          placeholder="••••••••••••"
+                          autoFocus
+                          onKeyDown={(e) => e.key === "Enter" && void confirmGoogleOtpAndSignIn()}
+                          className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-4 py-3 text-[14px] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
+                        />
+                      </div>
+                    )}
 
                     <div className="flex gap-2 pt-1">
                       <button
@@ -658,10 +737,13 @@ export default function AuthPage() {
                       </button>
                       <button
                         onClick={() => void confirmGoogleOtpAndSignIn()}
-                        disabled={auth.busy || googleOtp.length !== 6}
+                        disabled={
+                          auth.busy ||
+                          (verifyMethod === "otp" ? googleOtp.length !== 6 : verifyPassword.trim().length < 6)
+                        }
                         className="flex-1 py-2.5 rounded-xl bg-[#a8c7fa] text-[#040e29] font-semibold text-[14px] hover:bg-[#c2e7ff] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        {auth.busy ? "Verifying…" : "Verify 2FA & Sign In"}
+                        {auth.busy ? "Verifying…" : "Verify Identity & Sign In"}
                       </button>
                     </div>
                   </div>
@@ -682,7 +764,12 @@ export default function AuthPage() {
                             {a.name.trim()[0]?.toUpperCase() ?? "B"}
                           </span>
                           <span className="flex-1 min-w-0">
-                            <span className="block text-[15px] font-medium text-[#e8eaed] truncate">{a.name}</span>
+                            <span className="block text-[15px] font-medium text-[#e8eaed] truncate flex items-center gap-1.5">
+                              {a.name}
+                              <span className="text-[10px] font-mono bg-[#0c2d1c] text-[#81c995] px-1.5 py-0.5 rounded border border-[#137333]">
+                                ✔ Verified
+                              </span>
+                            </span>
                             <span className="block text-[13px] text-[#9aa0a6] truncate">{a.email}</span>
                           </span>
                         </button>
@@ -701,9 +788,9 @@ export default function AuthPage() {
                   </div>
                 ) : (
                   /* ── Add New Account Step ── */
-                  <div className="space-y-4 bg-[#131314] p-5 rounded-2xl border border-[#3c4043]">
+                  <div className="space-y-3.5 bg-[#131314] p-5 rounded-2xl border border-[#3c4043]">
                     <p className="text-[13px] text-[#9aa0a6]">
-                      Enter the Google account details to authorize FedShield:
+                      Enter your Google Account details to verify ownership and authorize FedShield:
                     </p>
                     <div>
                       <label className="block text-[11px] font-medium uppercase tracking-wider text-[#9aa0a6] mb-1">Full Name</label>
@@ -711,25 +798,36 @@ export default function AuthPage() {
                         value={gName}
                         onChange={(e) => setGName(e.target.value)}
                         placeholder="BHUVAN S"
-                        className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-3.5 py-2.5 text-[14px] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
+                        className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-3.5 py-2 text-[14px] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-medium uppercase tracking-wider text-[#9aa0a6] mb-1">Google Email</label>
+                      <label className="block text-[11px] font-medium uppercase tracking-wider text-[#9aa0a6] mb-1">Google Email Address</label>
                       <input
                         value={gEmail}
                         onChange={(e) => setGEmail(e.target.value)}
                         placeholder="1nt23is054.bhuvan@nmit.ac.in"
                         type="email"
-                        className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-3.5 py-2.5 text-[14px] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
+                        className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-3.5 py-2 text-[14px] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium uppercase tracking-wider text-[#9aa0a6] mb-1">Google Account Password</label>
+                      <input
+                        value={gPassword}
+                        onChange={(e) => setGPassword(e.target.value)}
+                        placeholder="••••••••••••"
+                        type="password"
+                        className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-3.5 py-2 text-[14px] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
+                      />
+                      <span className="block text-[10.5px] text-[#9aa0a6] mt-1 font-mono">Min 6 characters required for account verification</span>
                     </div>
                     <div className="flex gap-2 pt-2">
                       <button onClick={() => setAddAccountStep(false)} className="px-4 py-2 rounded-xl border border-[#5f6368] text-[13px] text-[#9aa0a6] hover:text-[#e8eaed]">
                         Cancel
                       </button>
                       <button onClick={() => authorizeNewAccount()} disabled={auth.busy} className="flex-1 py-2 rounded-xl bg-[#a8c7fa] text-[#040e29] font-semibold text-[13.5px] hover:bg-[#c2e7ff] transition-colors">
-                        Send 2FA Security Code
+                        Proceed to 2FA Verification
                       </button>
                     </div>
                   </div>
