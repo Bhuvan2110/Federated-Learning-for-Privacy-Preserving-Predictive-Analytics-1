@@ -21,6 +21,7 @@ Only masked, clipped, and noised weight updates are transmitted to the aggregato
 | 📁 **Dataset Vault & ZIP Importer** | Supports local **CSV** and **.zip archive** uploads with client-side unzipping via `JSZip`. Features **Remote Dataset URL Importer** and automatic continuous target binarization (median-split). |
 | 📱 **QR Code Verification Portal** | Generates scannable QR verification certificates opening an interactive standalone **Verification Web Portal** (`/?verifyRun=`) displaying the full Confusion Matrix, ROC curves, and audit trail. |
 | 🏢 **Client Registry Management** | Register extra custom client nodes, toggle participation on/off per round, delete nodes, or reset defaults. |
+| 🏥 **System Health Diagnostics** | Automated test suite executing diagnostics across Google AI Studio API, FL simulation engine, Web Speech APIs, and ZIP parsers with live error tracebacks & step-by-step fix guidance. |
 | 🔮 **Inference Engine & Analytics** | Interactive prediction console with natural language query parsing, feature contribution breakdown, holdout metric evaluation, and JSON model weight exports. |
 
 ---
@@ -30,28 +31,28 @@ Only masked, clipped, and noised weight updates are transmitted to the aggregato
 ### 1. Federated Averaging (FedAvg)
 - **Method**: Computes a weighted average of client parameters based on sample counts:
   $$w^{t+1} = \sum_{i=1}^{K} \frac{n_i}{N} w_i^t$$
-- **Rationale**: Serves as the foundational FL algorithm. Reduces network communication overhead by allowing clients to perform $E$ local training epochs before transmitting updates to the central aggregator.
+- **Why Used**: Serves as the baseline FL aggregation algorithm. Enables edge nodes to train locally for $E$ epochs, drastically reducing communication overhead compared to centralized training.
 
 ### 2. Federated Proximal (FedProx)
 - **Method**: Modifies the local objective function by adding a proximal regularization term:
   $$\min_{w} h_i(w; w^t) = L_i(w) + \frac{\mu}{2} \|w - w^t\|^2$$
-- **Rationale**: Prevents local model weights from drifting excessively on heterogeneous (Non-IID) data splits (Dirichlet $\alpha < 0.5$) and accommodates partial participation.
+- **Why Used**: Prevents local client weights from diverging away from global model trajectory under severe Non-IID label skew (Dirichlet $\alpha < 0.5$) and partial node availability.
 
 ### 3. SCAFFOLD (Stochastic Controlled Averaging)
 - **Method**: Tracks client control variates $c_i$ and a global control variate $c$ to correct gradient step direction:
   $$g_{\text{scaffold}} = g + c - c_i$$
   $$c_i^{+} = c_i - c + \frac{w^t - w_i}{K \cdot \eta}$$
-- **Rationale**: Completely eliminates client drift caused by non-IID label skew across edge nodes, accelerating convergence stability.
+- **Why Used**: Completely eliminates client drift caused by non-IID heterogeneous data distributions across edge nodes, accelerating model convergence stability.
 
 ### 4. FL + DP-SGD (Federated Differentially Private SGD)
-- **Method**: Combines sample-level/update-level $L_2$ norm clipping with Gaussian noise injection:
+- **Method**: Combines update $L_2$ norm clipping with calibrated Gaussian noise injection:
   $$\bar{\Delta w}_i = \Delta w_i \cdot \min\left(1, \frac{C}{\|\Delta w_i\|_2}\right)$$
   $$\tilde{\Delta w} = \sum_{i=1}^K \frac{n_i}{N} \bar{\Delta w}_i + \mathcal{N}\left(0, \sigma^2 I\right), \quad \sigma = \frac{2C}{n}\frac{\sqrt{2\ln(1.25/\delta)}}{\epsilon}$$
-- **Rationale**: Provides mathematical $(\epsilon, \delta)$-Differential Privacy bounds to prevent membership inference attacks and data reconstruction attacks.
+- **Why Used**: Enforces mathematical $(\epsilon, \delta)$-Differential Privacy bounds to prevent membership inference attacks, gradient inversion, and data reconstruction attacks.
 
 ### 5. Cryptographic Secure Aggregation
 - **Method**: Negotiates pairwise additive zero-sum masks $s_{i,j}$ between clients such that $\sum_{i,j} s_{i,j} = 0$.
-- **Rationale**: Ensures the central server only observes aggregated global parameter sums, keeping individual client updates completely unreadable.
+- **Why Used**: Ensures the central aggregator server only observes aggregated global parameter sums, keeping individual client updates completely unreadable.
 
 ---
 
@@ -113,7 +114,8 @@ src/
     ├── Privacy.tsx       # Differential Privacy (ε, δ)-DP math ledger & trade-off curves
     ├── Analytics.tsx     # Holdout evaluation metrics, ROC curves, and confusion matrices
     ├── History.tsx       # Completed run audit trail & JSON model weight exports
-    └── VerifyPortal.tsx  # Standalone verification web portal opened via QR code
+    ├── VerifyPortal.tsx  # Standalone verification web portal opened via QR code
+    └── HealthCheck.tsx   # System Health & API Connection Diagnostics with fix recommendations
 ```
 
 ---
@@ -162,7 +164,18 @@ src/
 
 ---
 
-## 🔒 Security & Data Protection Principles
+## 🎯 Demo & Viva Walkthrough Guide
+
+1. **Operations Overview**: Examine pre-seeded federated vs centralized training runs to observe privacy-utility trade-off convergence.
+2. **Training Lab**: Select an algorithm (`FedAvg`, `FedProx`, `SCAFFOLD`, `FL+DP-SGD`), configure noise parameter $\epsilon$, Dirichlet $\alpha$, toggle Secure Aggregation, and launch training. Watch weight deltas stream across client nodes in real time.
+3. **Prediction Console**: Query trained models using plain natural language (e.g., *"58yo patient, blood pressure 165, BMI 31, cholesterol 250"*). Observe confidence scores and top feature contribution drivers.
+4. **Dataset Vault**: Upload a local `.csv` file or `.zip` archive (or paste a remote CSV URL). The platform automatically extracts files on-device and binarizes continuous numeric target columns.
+5. **System Health & API Diagnostics**: Open System Health to run automated test cases verifying API endpoints, engine convergence, Web Speech APIs, and ZIP parsers.
+6. **QR Code Verification**: View any completed run in History and click **Scan QR Verification Code**. Scan or click the QR code to open the live, verifiable **Model Verification Portal** (`/?verifyRun=`) displaying the complete confusion matrix.
+
+---
+
+## 🔒 Security & Privacy Guarantees
 
 - **Zero Raw Data Transmission**: All local model training, CSV parsing, ZIP decompression, and feature standardization take place strictly inside the browser client.
 - **No Hardcoded Secrets**: Secrets and API keys are loaded via environment variables or entered dynamically via the secure settings interface.
