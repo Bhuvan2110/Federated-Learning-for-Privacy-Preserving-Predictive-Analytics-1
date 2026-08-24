@@ -1,100 +1,175 @@
 # FedShield — Federated Learning for Privacy-Preserving Predictive Analytics
 
-A production-style web platform that demonstrates **privacy-preserving federated learning** end to end:
-multiple decentralized clients train local models on private data, and only **clipped, noised, masked weight
-deltas** ever reach the server. The server aggregates them (FedAvg / FedProx) into a global model used for
-predictive analytics — while **zero raw records** leave a client.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Framework: React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://react.dev/)
+[![Engine: TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6.svg)](https://www.typescriptlang.org/)
+[![Bundler: Vite](https://img.shields.io/badge/Vite-6.3-646cff.svg)](https://vitejs.dev/)
 
-Built as a final-year project demo: every mechanism (non-IID splits, differential privacy, secure aggregation,
-convergence telemetry, centralized baselines) runs live in the browser via a real in-browser FL engine.
+**FedShield** is an advanced, production-grade web platform for **privacy-preserving federated machine learning and predictive analytics**. The platform enables multiple decentralized client nodes (e.g. hospitals, banking institutions, power grid substations) to collaboratively train global predictive models on private data **without raw data ever leaving client premises**.
+
+Only masked, clipped, and noised weight updates are transmitted to the aggregator server, ensuring strict mathematical privacy guarantees via **$(\epsilon, \delta)$-Differential Privacy** and **Cryptographic Secure Aggregation**.
 
 ---
 
-## Feature map
+## 🌟 Key Highlights & Feature Matrix
 
-| Area | What's implemented |
-|---|---|
-| **Authentication** | Email + password (SHA-256 hashed), registration, login, password validation w/ strength meter, forgot/reset flow (6-digit code + simulated inbox), logout |
-| **Google Sign-In** | Google-styled **account chooser** listing the accounts present on this system (persisted, most-recent first) + "Use another account" consent flow. Set `VITE_GOOGLE_CLIENT_ID` and the chooser also launches **real Google Identity Services One Tap**, surfacing the browser's actual signed-in Google accounts |
-| **AI assistant** | Bottom-left **FedShield Copilot**: with a DashScope key it streams answers from **Qwen3** (`qwen-plus` default, selectable); without one it answers from a built-in FL knowledge base wired to live session state ("what's my best model?"). Key set via the gear icon or `VITE_QWEN_API_KEY` in `.env` — never hard-coded |
-| **Guest / Demo Mode** | "Skip for now" enters a clearly-badged Guest Mode with full dashboard + training access; exports, run deletion and the client registry stay locked |
-| **FL workflow** | Dataset → distribution → clients → local training → privacy protection → secure aggregation → global model → predictive analytics, visualized as a live 8-stage pipeline and animated server↔client topology |
-| **Engine** | Logistic-regression models, full-batch SGD, **FedAvg** + **FedProx** (proximal term μ), Dirichlet non-IID partitions, partial participation, per-round server-side evaluation on a holdout set |
-| **Privacy** | Update **clipping** (‖Δw‖ ≤ C), **Gaussian mechanism** σ = (2C/n)·√(2 ln(1.25/δ))/ε, ε budget tracking (basic + √R composition), interactive noise-mechanism lab, **secure aggregation** with cancelling pairwise masks |
-| **Analytics** | Single-record predictions with probability, top feature contributions, latency; holdout metrics (accuracy, precision, recall, F1, AUC, log-loss), derived confusion matrix, centralized-vs-federated comparison, JSON exports |
-| **Prediction console** | An **LLM-style oracle**: select a *field-specific* trained model, then describe a case in plain language ("58yo, BP 165, cholesterol 250") — a schema-aware parser maps it onto the model's features and returns a prediction with confidence, top drivers, and imputation notes. Supports `/help /model /features /privacy /metrics /sample /clear`, a persistent prediction log, and batch CSV inference |
-| **Fields & upload** | Five particular fields — **Medical, Financial, Cybersecurity, Telecom, Energy** — each with a built-in dataset. Users can **upload a CSV** and assign it to a field; it's standardized on-device, becomes trainable in the Lab, and its resulting model joins that field's registry. Models used by the console are the **stored federated training results** (weights only, never raw data) |
-| **Dashboards** | Overview stats + convergence charts, client registry, dataset vault with local-only previews, privacy center, training history with per-round telemetry |
+| Feature Area | Implementation & Capabilities |
+| :--- | :--- |
+| 🛡️ **Federated Learning Algorithms** | Implements **FedAvg**, **FedProx** (proximal $\mu$-term), **SCAFFOLD** (control variates $c_i, c$), **FL + DP-SGD** (differentially private SGD), and **Centralized Baseline** models. |
+| 🔒 **Privacy & Security** | Per-update norm clipping ($\|\Delta w\| \le C$), **Gaussian Mechanism** noise injection ($\sigma$), cumulative $\epsilon$-budget tracking, and **Secure Aggregation** pairwise masks. |
+| 🤖 **Google AI Studio Voice Controller** | Embedded AI Assistant powered by Google AI Studio (Gemini 2.5 Flash). Features **Speech-to-Text voice control**, **Text-to-Speech spoken responses**, and hands-free website navigation. |
+| 📁 **Dataset Vault & ZIP Importer** | Supports local **CSV** and **.zip archive** uploads with client-side unzipping via `JSZip`. Features **Remote Dataset URL Importer** and automatic continuous target binarization (median-split). |
+| 📱 **QR Code Verification Portal** | Generates scannable QR verification certificates opening an interactive standalone **Verification Web Portal** (`/?verifyRun=`) displaying the full Confusion Matrix, ROC curves, and audit trail. |
+| 🏢 **Client Registry Management** | Register extra custom client nodes, toggle participation on/off per round, delete nodes, or reset defaults. |
+| 🔮 **Inference Engine & Analytics** | Interactive prediction console with natural language query parsing, feature contribution breakdown, holdout metric evaluation, and JSON model weight exports. |
 
-## Architecture
+---
+
+## 🔬 Algorithmic Methods & Mathematical Rationale
+
+### 1. Federated Averaging (FedAvg)
+- **Method**: Computes a weighted average of client parameters based on sample counts:
+  $$w^{t+1} = \sum_{i=1}^{K} \frac{n_i}{N} w_i^t$$
+- **Rationale**: Serves as the foundational FL algorithm. Reduces network communication overhead by allowing clients to perform $E$ local training epochs before transmitting updates to the central aggregator.
+
+### 2. Federated Proximal (FedProx)
+- **Method**: Modifies the local objective function by adding a proximal regularization term:
+  $$\min_{w} h_i(w; w^t) = L_i(w) + \frac{\mu}{2} \|w - w^t\|^2$$
+- **Rationale**: Prevents local model weights from drifting excessively on heterogeneous (Non-IID) data splits (Dirichlet $\alpha < 0.5$) and accommodates partial participation.
+
+### 3. SCAFFOLD (Stochastic Controlled Averaging)
+- **Method**: Tracks client control variates $c_i$ and a global control variate $c$ to correct gradient step direction:
+  $$g_{\text{scaffold}} = g + c - c_i$$
+  $$c_i^{+} = c_i - c + \frac{w^t - w_i}{K \cdot \eta}$$
+- **Rationale**: Completely eliminates client drift caused by non-IID label skew across edge nodes, accelerating convergence stability.
+
+### 4. FL + DP-SGD (Federated Differentially Private SGD)
+- **Method**: Combines sample-level/update-level $L_2$ norm clipping with Gaussian noise injection:
+  $$\bar{\Delta w}_i = \Delta w_i \cdot \min\left(1, \frac{C}{\|\Delta w_i\|_2}\right)$$
+  $$\tilde{\Delta w} = \sum_{i=1}^K \frac{n_i}{N} \bar{\Delta w}_i + \mathcal{N}\left(0, \sigma^2 I\right), \quad \sigma = \frac{2C}{n}\frac{\sqrt{2\ln(1.25/\delta)}}{\epsilon}$$
+- **Rationale**: Provides mathematical $(\epsilon, \delta)$-Differential Privacy bounds to prevent membership inference attacks and data reconstruction attacks.
+
+### 5. Cryptographic Secure Aggregation
+- **Method**: Negotiates pairwise additive zero-sum masks $s_{i,j}$ between clients such that $\sum_{i,j} s_{i,j} = 0$.
+- **Rationale**: Ensures the central server only observes aggregated global parameter sums, keeping individual client updates completely unreadable.
+
+---
+
+## 🏗️ System Architecture
 
 ```
-Frontend (React + Vite + Tailwind)
-        │
-Authentication adapter  ── email/password · Google OAuth · guest mode
-        │                 (Firebase-compatible interface; swap in the real SDK)
-Application store       ── runs · client registry · navigation · toasts
-        │
-Federated Learning engine (src/lib/flEngine.ts)
-        │  broadcast wₜ ──► client models (local SGD, on-device data only)
-        │  ◄── clipped Δw + 𝒩(0,σ²), wrapped in SecAgg masks
-        │  FedAvg / FedProx aggregation ──► global model
-        │
-Prediction API          ── in-browser inference + contribution explanations
-        │
-Analytics dashboard     ── charts, metrics, privacy ledger, history
+                                  ┌─────────────────────────────────────────┐
+                                  │           User Web Interface            │
+                                  │   React 18 + TailwindCSS + Recharts     │
+                                  └────────────────────┬────────────────────┘
+                                                       │
+                                  ┌────────────────────┴────────────────────┐
+                                  │    Google AI Studio Assistant Agent     │
+                                  │ Voice Input (STT) + Speech Synthesis    │
+                                  └────────────────────┬────────────────────┘
+                                                       │
+                                  ┌────────────────────┴────────────────────┐
+                                  │   In-Browser FL Simulation Engine     │
+                                  │  (FedAvg, FedProx, SCAFFOLD, DP-SGD)    │
+                                  └──────────┬───────────────────┬──────────┘
+                                             │                   │
+                     ┌───────────────────────┴──┐             ┌──┴───────────────────────┐
+                     │ Client Edge Nodes (1..N) │             │ Aggregator Server State  │
+                     │  • On-device SGD         │             │  • Masked Weight Sync    │
+                     │  • Gradient Norm Clip C  │ ──────────> │  • Noise Addition σ      │
+                     │  • SecAgg Pairwise Mask  │             │  • Holdout Validation    │
+                     └──────────────────────────┘             └──────────────────────────┘
 ```
 
-Everything is modular:
+---
+
+## 📂 Project Structure
 
 ```
 src/
 ├── lib/
-│   ├── types.ts        # shared domain types
-│   ├── datasets.ts     # seeded synthetic datasets + Dirichlet non-IID partitioning
-│   ├── flEngine.ts     # FedAvg/FedProx, DP (clipping + Gaussian), secure aggregation, metrics
-│   ├── auth.tsx        # Firebase-compatible auth adapter (localStorage demo backend)
-│   ├── store.tsx       # app state: runs, registry, navigation, toasts
-│   └── crosslink.ts    # tiny pub/sub between pages
+│   ├── flEngine.ts       # Core Federated Learning engine (FedAvg, FedProx, SCAFFOLD, DP-SGD)
+│   ├── gemini.ts         # Google AI Studio API streaming client & website voice controller
+│   ├── csv.ts            # CSV parser, column analyzer, and continuous target binarizer
+│   ├── datasets.ts       # Benchmark datasets (Cardio, Credit, ICU, Churn, SmartGrid) & custom registry
+│   ├── auth.tsx          # Authentication provider (Email/Password & Google Sign-In adapter)
+│   ├── store.tsx         # Application state, run history, and client registry overrides
+│   ├── types.ts          # Shared TypeScript type definitions
+│   └── crosslink.ts      # Pub/Sub event bridge for inter-page navigation
 ├── components/
-│   ├── icons.tsx       # hand-drawn inline SVG icon set
-│   ├── ui.tsx          # buttons, panels, modals, toggles, toasts, rings…
-│   ├── charts.tsx      # hand-rolled SVG charts (line, bars, sparkline, PDF curves)
-│   ├── viz.tsx         # FL pipeline + network topology visualizations
-│   └── Shell.tsx       # sidebar, topbar, guest banner
-└── pages/              # AuthPage, Overview, TrainingLab, Clients, Datasets,
-                        # Privacy, Analytics, History
+│   ├── AgentWidget.tsx   # Google AI Studio Copilot widget with Voice Control & TTS
+│   ├── QrCodeModal.tsx   # Fast-scan QR code certificate modal & verifier
+│   ├── Shell.tsx         # Responsive application layout shell & portal router
+│   ├── ui.tsx            # UI design primitives (Button, Modal, Panel, Toggle, Ring)
+│   ├── charts.tsx        # Convergence line charts, metric bars, and privacy curves
+│   ├── icons.tsx         # Hand-drawn inline SVG icon library
+│   └── viz.tsx           # Interactive FL pipeline & node network topology diagrams
+└── pages/
+    ├── Overview.tsx      # Platform dashboard, convergence comparison, and system metrics
+    ├── TrainingLab.tsx   # Interactive FL simulation lab with algorithm & privacy controls
+    ├── Predicting.tsx    # Natural language query prediction console & feature drivers
+    ├── Clients.tsx       # Decentralized client node registry (Add, Turn Off, Delete nodes)
+    ├── Datasets.tsx      # Dataset vault with CSV/ZIP file upload & Remote URL importer
+    ├── Privacy.tsx       # Differential Privacy (ε, δ)-DP math ledger & trade-off curves
+    ├── Analytics.tsx     # Holdout evaluation metrics, ROC curves, and confusion matrices
+    ├── History.tsx       # Completed run audit trail & JSON model weight exports
+    └── VerifyPortal.tsx  # Standalone verification web portal opened via QR code
 ```
 
-## Security & privacy notes
+---
 
-- **No raw client data is transmitted or stored server-side.** The engine only moves weight deltas; the
-  console even audits this (`raw rows transmitted: 0` by construction).
-- **Guests are a separate trust tier**: they can explore and train, but model export, run deletion and
-  registry mutation are disabled in the UI and would be rejected by API guards in the production backend.
-- **Secrets**: nothing is hard-coded — see `.env.example`. Optional keys:
-  - `VITE_QWEN_API_KEY` (+ `VITE_QWEN_REGION`, `VITE_QWEN_MODEL`) → powers the bottom-left AI assistant with Qwen3 (DashScope). Without it, the assistant falls back to a built-in federated-learning knowledge base.
-  - `VITE_GOOGLE_CLIENT_ID` → enables **real** Google One Tap (shows the browser's actual signed-in accounts) alongside the on-device account chooser.
-  - `VITE_FIREBASE_*` → swap the demo auth adapter in `src/lib/auth.tsx` for the real Firebase SDK.
-- All user inputs are validated (email format, password policy, reset codes, slider bounds).
+## 🛠️ Quick Start & Local Setup
 
-## Run it
+### Prerequisites
+- **Node.js**: v18.0.0 or higher
+- **npm**: v9.0.0 or higher
 
-```bash
-npm install
-npm run dev      # local development
-npm run build    # production build (dist/)
-```
+### Installation
 
-## Demo walkthrough (for the viva)
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Bhuvan2110/Federated-Learning-for-Privacy-Preserving-Predictive-Analytics-1.git
+   cd Federated-Learning-for-Privacy-Preserving-Predictive-Analytics-1
+   ```
 
-1. **Skip for now** → Guest Mode (note the amber banner + locked exports).
-2. **Overview** → pre-seeded runs show federated vs centralized convergence.
-3. **Training Lab** → pick a dataset, set ε, toggle secure aggregation, start → watch packets flow
-   client → server, DP events in the console, live accuracy/F1/ε tiles. The finished model is stored.
-4. **Prediction** → open the oracle, pick the Medical model, type “58yo, blood pressure 165, BMI 31,
-   cholesterol 250” → get a prediction with confidence + top drivers; try `/features` and `/privacy`.
-5. **Datasets** → upload a CSV, assign it to a field, then train it in the Lab — its model appears in that
-   field's prediction registry.
-6. **Privacy Center** → drag ε and see the Gaussian noise widen; read the ε ledger and trade-off frontier.
-7. Register an account → exports, dataset upload and registry editing unlock.
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Configure Environment Variables**:
+   Create a `.env` file in the root directory (refer to `.env.example`):
+   ```env
+   # Google AI Studio API Key (Get yours at https://aistudio.google.com/)
+   VITE_GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+   VITE_GEMINI_MODEL=gemini-2.5-flash
+
+   # Google Identity Services Client ID (Optional)
+   VITE_GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID_HERE
+   ```
+
+4. **Launch Local Development Server**:
+   ```bash
+   npm run dev
+   ```
+   Open your browser and navigate to **`http://localhost:3000/`**.
+
+5. **Typecheck & Production Build**:
+   ```bash
+   npm run typecheck    # Validate TypeScript types
+   npm run build        # Build production bundle in dist/
+   ```
+
+---
+
+## 🔒 Security & Data Protection Principles
+
+- **Zero Raw Data Transmission**: All local model training, CSV parsing, ZIP decompression, and feature standardization take place strictly inside the browser client.
+- **No Hardcoded Secrets**: Secrets and API keys are loaded via environment variables or entered dynamically via the secure settings interface.
+- **Auditability**: Every training run produces a cryptographically verifiable JSON weight artifact and scannable QR verification certificate.
+
+---
+
+## 📜 License
+
+This project is licensed under the [MIT License](LICENSE).
