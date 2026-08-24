@@ -19,6 +19,17 @@ import {
 import type { ReactNode } from "react";
 import type { AuthMode, SessionUser, StoredUser } from "./types";
 
+import {
+  createUserWithEmailAndPassword,
+  firebaseAuth,
+  googleAuthProvider,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+} from "./firebase";
+
 const K_USERS = "fedshield.users";
 const K_SESSION = "fedshield.session";
 const K_RESETS = "fedshield.resets";
@@ -169,25 +180,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(true);
 
   useEffect(() => {
-    const session = readJson<{ uid: string; mode: AuthMode } | null>(K_SESSION, null);
-    if (session?.mode === "guest") {
-      setUser({
-        uid: "guest",
-        name: "Guest Analyst",
-        email: "guest@fedshield.demo",
-        provider: "guest",
-        role: "guest",
-      });
-      setMode("guest");
-    } else if (session?.uid) {
-      const users = readJson<StoredUser[]>(K_USERS, []);
-      const u = users.find((x) => x.uid === session.uid);
-      if (u) {
-        setUser({ uid: u.uid, name: u.name, email: u.email, provider: u.provider, role: u.role });
+    // Listen for live Firebase Auth state changes
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (fbUser) => {
+      if (fbUser) {
+        setUser({
+          uid: fbUser.uid,
+          name: fbUser.displayName || fbUser.email?.split("@")[0] || "Authenticated User",
+          email: fbUser.email || "user@fedshield.auth",
+          provider: (fbUser.providerData[0]?.providerId as "password" | "google" | "guest") || "password",
+          role: "analyst",
+        });
         setMode("user");
+        setBusy(false);
+        return;
       }
-    }
-    setBusy(false);
+
+      // Local session check fallback
+      const session = readJson<{ uid: string; mode: AuthMode } | null>(K_SESSION, null);
+      if (session?.mode === "guest") {
+        setUser({
+          uid: "guest",
+          name: "Guest Analyst",
+          email: "guest@fedshield.demo",
+          provider: "guest",
+          role: "guest",
+        });
+        setMode("guest");
+      } else if (session?.uid) {
+        const users = readJson<StoredUser[]>(K_USERS, []);
+        const u = users.find((x) => x.uid === session.uid);
+        if (u) {
+          setUser({ uid: u.uid, name: u.name, email: u.email, provider: u.provider, role: u.role });
+          setMode("user");
+        }
+      }
+      setBusy(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const persistSession = (uid: string, m: AuthMode) => {
@@ -197,58 +227,95 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(async (name: string, email: string, password: string) => {
     setBusy(true);
-    await wait(650);
-    const users = readJson<StoredUser[]>(K_USERS, []);
     const clean = email.trim().toLowerCase();
-    if (users.some((u) => u.email.toLowerCase() === clean)) {
+
+    try {
+      // Attempt live Firebase Auth sign up
+      const cred = await createUserWithEmailAndPassword(firebaseAuth, clean, password);
+      const u: SessionUser = {
+        uid: cred.user.uid,
+        name: name.trim() || cred.user.displayName || clean.split("@")[0],
+        email: cred.user.email || clean,
+        provider: "password",
+        role: "analyst",
+      };
+      setUser(u);
+      persistSession(u.uid, "user");
+    } catch (fbErr) {
+      // Fallback local storage registration
+      const users = readJson<StoredUser[]>(K_USERS, []);
+      if (users.some((u) => u.email.toLowerCase() === clean)) {
+        setBusy(false);
+        throw new Error(fbErr instanceof Error ? fbErr.message : "An account with this email already exists.");
+      }
+      const passHash = await sha256(`fedshield::${password}`);
+      const u: StoredUser = {
+        uid: `u-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`,
+        name: name.trim(),
+        email: clean,
+        passHash,
+        provider: "password",
+        role: "analyst",
+        createdAt: Date.now(),
+        lastLogin: Date.now(),
+      };
+      users.push(u);
+      writeJson(K_USERS, users);
+      setUser({ uid: u.uid, name: u.name, email: u.email, provider: u.provider, role: u.role });
+      persistSession(u.uid, "user");
+    } finally {
       setBusy(false);
-      throw new Error("An account with this email already exists. Try signing in instead.");
     }
-    const passHash = await sha256(`fedshield::${password}`);
-    const u: StoredUser = {
-      uid: `u-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`,
-      name: name.trim(),
-      email: clean,
-      passHash,
-      provider: "password",
-      role: "analyst",
-      createdAt: Date.now(),
-      lastLogin: Date.now(),
-    };
-    users.push(u);
-    writeJson(K_USERS, users);
-    setUser({ uid: u.uid, name: u.name, email: u.email, provider: u.provider, role: u.role });
-    persistSession(u.uid, "user");
-    setBusy(false);
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     setBusy(true);
-    await wait(600);
-    const users = readJson<StoredUser[]>(K_USERS, []);
     const clean = email.trim().toLowerCase();
-    const u = users.find((x) => x.email.toLowerCase() === clean);
-    if (!u) {
+
+    try {
+      // Attempt live Firebase Auth sign in
+      const cred = await signInWithEmailAndPassword(firebaseAuth, clean, password);
+      const u: SessionUser = {
+        uid: cred.user.uid,
+        name: cred.user.displayName || clean.split("@")[0],
+        email: cred.user.email || clean,
+        provider: "password",
+        role: "analyst",
+      };
+      setUser(u);
+      persistSession(u.uid, "user");
+    } catch {
+      // Fallback local storage login
+      const users = readJson<StoredUser[]>(K_USERS, []);
+      const u = users.find((x) => x.email.toLowerCase() === clean);
+      if (!u) {
+        setBusy(false);
+        throw new Error("No account found for this email address. Create one first.");
+      }
+      if (u.provider === "google") {
+        setBusy(false);
+        throw new Error("This account uses Google Sign-In. Use the Google button below.");
+      }
+      const hash = await sha256(`fedshield::${password}`);
+      if (hash !== u.passHash) {
+        setBusy(false);
+        throw new Error("Incorrect password. Try again or reset it below.");
+      }
+      u.lastLogin = Date.now();
+      writeJson(K_USERS, users);
+      setUser({ uid: u.uid, name: u.name, email: u.email, provider: u.provider, role: u.role });
+      persistSession(u.uid, "user");
+    } finally {
       setBusy(false);
-      throw new Error("No account found for this email. Create one first.");
     }
-    if (u.provider === "google") {
-      setBusy(false);
-      throw new Error("This account uses Google Sign-In. Use the Google button below.");
-    }
-    const hash = await sha256(`fedshield::${password}`);
-    if (hash !== u.passHash) {
-      setBusy(false);
-      throw new Error("Incorrect password. Try again or reset it below.");
-    }
-    u.lastLogin = Date.now();
-    writeJson(K_USERS, users);
-    setUser({ uid: u.uid, name: u.name, email: u.email, provider: u.provider, role: u.role });
-    persistSession(u.uid, "user");
-    setBusy(false);
   }, []);
 
   const logout = useCallback(() => {
+    try {
+      firebaseSignOut(firebaseAuth);
+    } catch {
+      /* fallback */
+    }
     localStorage.removeItem(K_SESSION);
     setUser(null);
     setMode(null);
@@ -267,9 +334,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const requestReset = useCallback(async (email: string): Promise<ResetTicket> => {
     setBusy(true);
-    await wait(700);
-    const users = readJson<StoredUser[]>(K_USERS, []);
     const clean = email.trim().toLowerCase();
+
+    try {
+      await sendPasswordResetEmail(firebaseAuth, clean);
+    } catch {
+      /* demo fallback */
+    }
+
+    const users = readJson<StoredUser[]>(K_USERS, []);
     const u = users.find((x) => x.email.toLowerCase() === clean);
     if (!u) {
       setBusy(false);
@@ -316,30 +389,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const googleSignIn = useCallback(async (profile: { name: string; email: string }) => {
     setBusy(true);
-    rememberGoogleAccount(profile); // remember this account on the device for the chooser
-    await wait(900); // simulated OAuth redirect + token exchange
-    const users = readJson<StoredUser[]>(K_USERS, []);
-    const clean = profile.email.trim().toLowerCase();
-    let u = users.find((x) => x.email.toLowerCase() === clean);
-    if (!u) {
-      u = {
-        uid: `g-${Date.now().toString(36)}`,
-        name: profile.name,
-        email: clean,
-        passHash: null,
+    rememberGoogleAccount(profile);
+
+    try {
+      const res = await signInWithPopup(firebaseAuth, googleAuthProvider);
+      const u: SessionUser = {
+        uid: res.user.uid,
+        name: res.user.displayName || profile.name,
+        email: res.user.email || profile.email,
         provider: "google",
         role: "analyst",
-        createdAt: Date.now(),
-        lastLogin: Date.now(),
       };
-      users.push(u);
-    } else {
-      u.lastLogin = Date.now();
+      setUser(u);
+      persistSession(u.uid, "user");
+    } catch {
+      // Fallback local session registration
+      const users = readJson<StoredUser[]>(K_USERS, []);
+      const clean = profile.email.trim().toLowerCase();
+      let u = users.find((x) => x.email.toLowerCase() === clean);
+      if (!u) {
+        u = {
+          uid: `g-${Date.now().toString(36)}`,
+          name: profile.name,
+          email: clean,
+          passHash: null,
+          provider: "google",
+          role: "analyst",
+          createdAt: Date.now(),
+          lastLogin: Date.now(),
+        };
+        users.push(u);
+      } else {
+        u.lastLogin = Date.now();
+      }
+    } finally {
+      setBusy(false);
     }
-    writeJson(K_USERS, users);
-    setUser({ uid: u.uid, name: u.name, email: u.email, provider: "google", role: u.role });
-    persistSession(u.uid, "user");
-    setBusy(false);
   }, []);
 
   const value = useMemo(
