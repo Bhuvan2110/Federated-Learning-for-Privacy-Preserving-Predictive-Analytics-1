@@ -1,6 +1,14 @@
 /* FedShield — Authentication (email/password, Google OAuth, reset, guest mode) */
 import { useEffect, useState } from "react";
-import { checkPassword, getKnownGoogleAccounts, useAuth, validateEmail } from "../lib/auth";
+import {
+  checkPassword,
+  getDeletedGoogleAccounts,
+  getKnownGoogleAccounts,
+  removeGoogleAccount,
+  restoreDefaultGoogleAccounts,
+  useAuth,
+  validateEmail,
+} from "../lib/auth";
 import type { GoogleAccount, ResetTicket } from "../lib/auth";
 import type { Phase } from "../lib/types";
 import {
@@ -155,12 +163,28 @@ export default function AuthPage() {
     setSelectedGoogleAcc(null);
   };
 
-  // Accounts present on this system: previously used (persisted) first, then demo accounts
+  const [deletedGoogleEmails, setDeletedGoogleEmails] = useState<string[]>(getDeletedGoogleAccounts);
+
+  // Accounts present on this system: previously used (persisted) first, then demo accounts minus deleted ones
   const deviceAccounts: GoogleAccount[] = (() => {
     const known = getKnownGoogleAccounts();
     const rest = GOOGLE_PERSONAS.filter((p) => !known.some((k) => k.email === p.email));
-    return [...known, ...rest];
+    const all = [...known, ...rest];
+    return all.filter((a) => !deletedGoogleEmails.includes(a.email.toLowerCase()));
   })();
+
+  const handleDeleteGoogleAccount = (email: string, name: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    removeGoogleAccount(email);
+    setDeletedGoogleEmails(getDeletedGoogleAccounts());
+    toast("info", `Removed Google account ${name} (${email}) from device list.`);
+  };
+
+  const handleRestoreGoogleAccounts = () => {
+    restoreDefaultGoogleAccounts();
+    setDeletedGoogleEmails([]);
+    toast("success", "Restored default Google accounts to chooser list.");
+  };
 
   const openGoogleChooser = () => {
     setGoogleOpen(true);
@@ -749,31 +773,46 @@ export default function AuthPage() {
                   </div>
                 ) : !addAccountStep ? (
                   /* ── Account Chooser List ── */
-                  <div className="space-y-1">
+                  <div className="space-y-3">
                     <div className="rounded-2xl border border-[#3c4043] divide-y divide-[#3c4043] overflow-hidden bg-[#131314]">
-                      {deviceAccounts.map((a) => (
-                        <button
-                          key={a.email}
-                          onClick={() => startGoogleOtpVerification({ name: a.name, email: a.email })}
-                          className="w-full flex items-center gap-4 px-4 py-3.5 text-left hover:bg-[#28292a] transition-colors group"
-                        >
-                          <span
-                            className="w-10 h-10 rounded-full flex items-center justify-center text-[#f1f3f4] text-lg font-medium shrink-0 shadow-inner"
-                            style={{ background: avatarColor(a.email) }}
+                      {deviceAccounts.length > 0 ? (
+                        deviceAccounts.map((a) => (
+                          <div
+                            key={a.email}
+                            onClick={() => startGoogleOtpVerification({ name: a.name, email: a.email })}
+                            className="w-full flex items-center gap-3.5 px-4 py-3.5 text-left hover:bg-[#28292a] transition-colors cursor-pointer group"
                           >
-                            {a.name.trim()[0]?.toUpperCase() ?? "B"}
-                          </span>
-                          <span className="flex-1 min-w-0">
-                            <span className="block text-[15px] font-medium text-[#e8eaed] truncate flex items-center gap-1.5">
-                              {a.name}
-                              <span className="text-[10px] font-mono bg-[#0c2d1c] text-[#81c995] px-1.5 py-0.5 rounded border border-[#137333]">
-                                ✔ Verified
-                              </span>
+                            <span
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-[#f1f3f4] text-lg font-medium shrink-0 shadow-inner"
+                              style={{ background: avatarColor(a.email) }}
+                            >
+                              {a.name.trim()[0]?.toUpperCase() ?? "B"}
                             </span>
-                            <span className="block text-[13px] text-[#9aa0a6] truncate">{a.email}</span>
-                          </span>
-                        </button>
-                      ))}
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-[15px] font-medium text-[#e8eaed] truncate flex items-center gap-1.5">
+                                {a.name}
+                                <span className="text-[10px] font-mono bg-[#0c2d1c] text-[#81c995] px-1.5 py-0.5 rounded border border-[#137333]">
+                                  ✔ Verified
+                                </span>
+                              </span>
+                              <span className="block text-[13px] text-[#9aa0a6] truncate">{a.email}</span>
+                            </span>
+                            {/* Delete / Remove Account Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteGoogleAccount(a.email, a.name, e)}
+                              className="p-2 rounded-full text-[#9aa0a6] hover:text-rose-400 hover:bg-rose-500/20 transition-all opacity-60 hover:opacity-100 shrink-0"
+                              title={`Delete ${a.name} from Google login list`}
+                            >
+                              <span className="text-sm">🗑️</span>
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-6 text-center text-[#9aa0a6] text-[13px]">
+                          No Google accounts listed on this device.
+                        </div>
+                      )}
 
                       <button
                         onClick={() => setAddAccountStep(true)}
@@ -785,6 +824,19 @@ export default function AuthPage() {
                         <span className="text-[15px] font-medium text-[#e8eaed]">Use another account</span>
                       </button>
                     </div>
+
+                    {/* Restore Accounts Reset Button */}
+                    {deletedGoogleEmails.length > 0 && (
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={handleRestoreGoogleAccounts}
+                          className="text-[11.5px] font-mono text-[#a8c7fa] hover:underline flex items-center gap-1"
+                        >
+                          ↺ Restore Default Accounts ({deletedGoogleEmails.length} deleted)
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   /* ── Add New Account Step ── */

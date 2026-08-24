@@ -37,8 +37,14 @@ export interface GoogleAccount {
   lastUsed: number;
 }
 
+const K_DELETED_GOOGLE = "fedshield.deletedGoogleAccounts";
+
 export function getKnownGoogleAccounts(): GoogleAccount[] {
   return readJson<GoogleAccount[]>(K_GOOGLE, []);
+}
+
+export function getDeletedGoogleAccounts(): string[] {
+  return readJson<string[]>(K_DELETED_GOOGLE, []);
 }
 
 export function rememberGoogleAccount(a: { name: string; email: string }) {
@@ -47,6 +53,26 @@ export function rememberGoogleAccount(a: { name: string; email: string }) {
   );
   list.unshift({ name: a.name, email: a.email.toLowerCase(), lastUsed: Date.now() });
   writeJson(K_GOOGLE, list.slice(0, 6));
+
+  // Remove from deleted list if re-added
+  const del = getDeletedGoogleAccounts().filter((e) => e !== a.email.toLowerCase());
+  writeJson(K_DELETED_GOOGLE, del);
+}
+
+export function removeGoogleAccount(email: string) {
+  const clean = email.toLowerCase();
+  const list = getKnownGoogleAccounts().filter((x) => x.email.toLowerCase() !== clean);
+  writeJson(K_GOOGLE, list);
+
+  const del = getDeletedGoogleAccounts();
+  if (!del.includes(clean)) {
+    del.push(clean);
+    writeJson(K_DELETED_GOOGLE, del);
+  }
+}
+
+export function restoreDefaultGoogleAccounts() {
+  localStorage.removeItem(K_DELETED_GOOGLE);
 }
 
 function readJson<T>(key: string, fallback: T): T {
