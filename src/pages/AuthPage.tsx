@@ -112,6 +112,33 @@ export default function AuthPage() {
   const [gEmail, setGEmail] = useState("");
   const [gisLive, setGisLive] = useState(false);
 
+  const [selectedGoogleAcc, setSelectedGoogleAcc] = useState<{ name: string; email: string } | null>(null);
+  const [googleOtp, setGoogleOtp] = useState("");
+  const [googleOtpCode, setGoogleOtpCode] = useState("");
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpErr, setOtpErr] = useState<string | null>(null);
+
+  const startGoogleOtpVerification = (profile: { name: string; email: string }) => {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setSelectedGoogleAcc(profile);
+    setGoogleOtpCode(code);
+    setGoogleOtp("");
+    setOtpErr(null);
+    setOtpStep(true);
+  };
+
+  const confirmGoogleOtpAndSignIn = async () => {
+    if (!selectedGoogleAcc) return;
+    if (googleOtp.trim() !== googleOtpCode) {
+      setOtpErr("Invalid 6-digit verification code. Check the code sent to your email.");
+      return;
+    }
+    setOtpErr(null);
+    await handleGoogleProfile(selectedGoogleAcc);
+    setOtpStep(false);
+    setSelectedGoogleAcc(null);
+  };
+
   // Accounts present on this system: previously used (persisted) first, then demo accounts
   const deviceAccounts: GoogleAccount[] = (() => {
     const known = getKnownGoogleAccounts();
@@ -122,16 +149,27 @@ export default function AuthPage() {
   const openGoogleChooser = () => {
     setGoogleOpen(true);
     setAddAccountStep(false);
+    setOtpStep(false);
+    setSelectedGoogleAcc(null);
     setGisLive(false);
     if (GOOGLE_CLIENT_ID) {
       // Real One Tap surfaces the browser's actual signed-in Google accounts
       startGoogleOneTap((p) => {
-        setGoogleOpen(false);
-        void handleGoogleProfile(p);
+        startGoogleOtpVerification(p);
       })
         .then(() => setGisLive(true))
         .catch(() => setGisLive(false));
     }
+  };
+
+  const authorizeNewAccount = () => {
+    const emailErr = validateEmail(gEmail);
+    const nameErr = gName.trim().length < 2 ? "Enter the account holder's name." : null;
+    if (emailErr || nameErr) {
+      setFormErr(emailErr ?? nameErr);
+      return;
+    }
+    startGoogleOtpVerification({ name: gName.trim(), email: gEmail.trim() });
   };
 
   const [phaseIdx, setPhaseIdx] = useState(1);
@@ -226,16 +264,6 @@ export default function AuthPage() {
     } catch (err) {
       setFormErr(err instanceof Error ? err.message : "Google sign-in failed.");
     }
-  };
-
-  const authorizeNewAccount = async () => {
-    const emailErr = validateEmail(gEmail);
-    const nameErr = gName.trim().length < 2 ? "Enter the account holder's name." : null;
-    if (emailErr || nameErr) {
-      setFormErr(emailErr ?? nameErr);
-      return;
-    }
-    await handleGoogleProfile({ name: gName.trim(), email: gEmail.trim() });
   };
 
   const strength = ["Too short", "Weak", "Acceptable", "Strong", "Excellent"][pwCheck.score];
@@ -551,27 +579,100 @@ export default function AuthPage() {
               {/* Left Column: Heading & Project context */}
               <div>
                 <h2 className="text-[34px] sm:text-[38px] font-normal leading-tight text-[#e8eaed] font-display">
-                  Choose an account
+                  {otpStep ? "2-Step Verification" : "Choose an account"}
                 </h2>
-                <p className="text-[16px] text-[#9aa0a6] mt-3">
-                  to continue to <span className="text-[#a8c7fa] font-medium">FedShield</span>
+                <p className="text-[15px] text-[#9aa0a6] mt-3 leading-relaxed">
+                  {otpStep ? (
+                    <>
+                      To confirm that this Google account belongs to you, enter the 6-digit security verification code sent to:
+                      <span className="block font-mono font-medium text-[#a8c7fa] text-[14px] mt-1.5">{selectedGoogleAcc?.email}</span>
+                    </>
+                  ) : (
+                    <>
+                      to continue to <span className="text-[#a8c7fa] font-medium">FedShield</span>
+                    </>
+                  )}
                 </p>
-                {gisLive && (
+                {gisLive && !otpStep && (
                   <div className="mt-6 p-3 rounded-xl bg-[#0c2d1c] border border-[#137333] text-[#81c995] text-[12px] leading-relaxed">
                     Google One Tap Active — you can also select your account from the browser prompt.
                   </div>
                 )}
               </div>
 
-              {/* Right Column: Account list & options */}
+              {/* Right Column: Account list / Add Account / OTP Verification */}
               <div>
-                {!addAccountStep ? (
+                {otpStep ? (
+                  /* ── 2-Step Security Verification OTP Step ── */
+                  <div className="space-y-4 bg-[#131314] p-5 rounded-2xl border border-[#3c4043] reveal">
+                    {/* Simulated Google Security Inbox Banner */}
+                    <div className="p-3.5 rounded-xl bg-[#0c2d1c] border border-[#137333] text-[#81c995] text-[12.5px] space-y-1.5">
+                      <div className="font-semibold flex items-center justify-between">
+                        <span>✉️ Google Security Inbox · Live</span>
+                        <button
+                          type="button"
+                          onClick={() => setGoogleOtp(googleOtpCode)}
+                          className="text-[11.5px] font-mono text-[#a8c7fa] hover:underline underline-offset-2"
+                        >
+                          Auto-fill code ⚡
+                        </button>
+                      </div>
+                      <div className="text-[#e8eaed]">
+                        Verification Security Code for <span className="font-mono text-[#a8c7fa]">{selectedGoogleAcc?.email}</span>:
+                      </div>
+                      <div className="font-mono font-bold text-[22px] tracking-[0.25em] text-[#81c995] bg-[#071f13] px-3 py-1.5 rounded-lg border border-[#137333]/80 text-center select-all">
+                        {googleOtpCode}
+                      </div>
+                    </div>
+
+                    {otpErr && (
+                      <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[12px]">
+                        {otpErr}
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-[11px] font-mono uppercase tracking-wider text-[#9aa0a6] mb-1.5">
+                        Enter 6-digit Code
+                      </label>
+                      <input
+                        value={googleOtp}
+                        onChange={(e) => setGoogleOtp(e.target.value.replace(/\D/g, ""))}
+                        placeholder="••••••"
+                        maxLength={6}
+                        autoFocus
+                        onKeyDown={(e) => e.key === "Enter" && void confirmGoogleOtpAndSignIn()}
+                        className="w-full bg-[#1e1f20] border border-[#5f6368] rounded-xl px-4 py-3 text-center font-mono font-bold text-xl tracking-[0.3em] text-[#e8eaed] outline-none focus:border-[#a8c7fa]"
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => {
+                          setOtpStep(false);
+                          setSelectedGoogleAcc(null);
+                        }}
+                        className="px-4 py-2.5 rounded-xl border border-[#5f6368] text-[13px] text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
+                      >
+                        ← Back
+                      </button>
+                      <button
+                        onClick={() => void confirmGoogleOtpAndSignIn()}
+                        disabled={auth.busy || googleOtp.length !== 6}
+                        className="flex-1 py-2.5 rounded-xl bg-[#a8c7fa] text-[#040e29] font-semibold text-[14px] hover:bg-[#c2e7ff] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {auth.busy ? "Verifying…" : "Verify 2FA & Sign In"}
+                      </button>
+                    </div>
+                  </div>
+                ) : !addAccountStep ? (
+                  /* ── Account Chooser List ── */
                   <div className="space-y-1">
                     <div className="rounded-2xl border border-[#3c4043] divide-y divide-[#3c4043] overflow-hidden bg-[#131314]">
                       {deviceAccounts.map((a) => (
                         <button
                           key={a.email}
-                          onClick={() => void handleGoogleProfile({ name: a.name, email: a.email })}
+                          onClick={() => startGoogleOtpVerification({ name: a.name, email: a.email })}
                           className="w-full flex items-center gap-4 px-4 py-3.5 text-left hover:bg-[#28292a] transition-colors group"
                         >
                           <span
@@ -599,6 +700,7 @@ export default function AuthPage() {
                     </div>
                   </div>
                 ) : (
+                  /* ── Add New Account Step ── */
                   <div className="space-y-4 bg-[#131314] p-5 rounded-2xl border border-[#3c4043]">
                     <p className="text-[13px] text-[#9aa0a6]">
                       Enter the Google account details to authorize FedShield:
@@ -626,8 +728,8 @@ export default function AuthPage() {
                       <button onClick={() => setAddAccountStep(false)} className="px-4 py-2 rounded-xl border border-[#5f6368] text-[13px] text-[#9aa0a6] hover:text-[#e8eaed]">
                         Cancel
                       </button>
-                      <button onClick={() => void authorizeNewAccount()} disabled={auth.busy} className="flex-1 py-2 rounded-xl bg-[#a8c7fa] text-[#040e29] font-semibold text-[13.5px] hover:bg-[#c2e7ff] transition-colors">
-                        Authorize
+                      <button onClick={() => authorizeNewAccount()} disabled={auth.busy} className="flex-1 py-2 rounded-xl bg-[#a8c7fa] text-[#040e29] font-semibold text-[13.5px] hover:bg-[#c2e7ff] transition-colors">
+                        Send 2FA Security Code
                       </button>
                     </div>
                   </div>
