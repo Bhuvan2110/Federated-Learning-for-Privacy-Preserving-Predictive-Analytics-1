@@ -133,7 +133,9 @@ export interface RunResult {
   status: "completed" | "cancelled";
   modelName: string;
   byGuest: boolean;
+  userEmail?: string;
 }
+
 
 export type LogLevel = "info" | "ok" | "warn" | "priv";
 
@@ -203,6 +205,7 @@ export interface CustomDatasetDef {
   std: number[];
   uploadedAt: number;
   fileName: string;
+  ownerEmail?: string;
 }
 
 /* ── Prediction console ───────────────────────────────────── */
@@ -218,7 +221,9 @@ export interface PredictionRecord {
   probability: number;
   input: Record<string, number>;
   assumed: string[];
+  userEmail?: string;
 }
+
 
 export interface ChatMsg {
   id: string;

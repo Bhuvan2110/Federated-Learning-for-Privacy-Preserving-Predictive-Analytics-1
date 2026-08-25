@@ -43,7 +43,8 @@ export default function Datasets() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const previewDs = preview ? getDataset(preview) : null;
 
-  const datasets = useMemo(() => listDatasets(), [customCount, uploadOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const datasets = useMemo(() => listDatasets(user?.email), [customCount, uploadOpen, user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const tryDelete = (id: string, name: string) => {
     const referenced = runs.some((r) => r.datasetId === id);
@@ -157,7 +158,8 @@ export default function Datasets() {
       })}
 
       <PreviewModal ds={previewDs} onClose={() => setPreview(null)} />
-      <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} onDone={(def) => { registerCustomDataset(def); bumpCustom(); toast("success", `“${def.meta.name}” registered under ${def.meta.sector} — train it in the Lab.`); }} />
+      <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} onDone={(def) => { registerCustomDataset(def, user?.email); bumpCustom(); toast("success", `“${def.meta.name}” registered under ${def.meta.sector} — train it in the Lab.`); }} />
+
     </div>
   );
 }

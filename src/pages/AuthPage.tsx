@@ -26,6 +26,8 @@ import {
 import { Badge, Button, Field, Modal, cn } from "../components/ui";
 import { Topology } from "../components/viz";
 import { useApp } from "../lib/store";
+import { APPWRITE_PROJECT_ID } from "../lib/appwrite";
+
 
 type View = "signin" | "signup" | "forgot";
 
@@ -186,21 +188,15 @@ export default function AuthPage() {
     toast("success", "Restored default Google accounts to chooser list.");
   };
 
-  const openGoogleChooser = () => {
-    setGoogleOpen(true);
-    setAddAccountStep(false);
-    setOtpStep(false);
-    setSelectedGoogleAcc(null);
-    setGisLive(false);
-    if (GOOGLE_CLIENT_ID) {
-      // Real One Tap surfaces the browser's actual signed-in Google accounts
-      startGoogleOneTap((p) => {
-        startGoogleOtpVerification(p);
-      })
-        .then(() => setGisLive(true))
-        .catch(() => setGisLive(false));
+  const openGoogleChooser = async () => {
+    setFormErr(null);
+    try {
+      await auth.googleSignIn();
+    } catch (err) {
+      setFormErr(err instanceof Error ? err.message : "Google sign-in failed.");
     }
   };
+
 
   const authorizeNewAccount = () => {
     const emailErr = validateEmail(gEmail);
@@ -402,7 +398,16 @@ export default function AuthPage() {
           </div>
 
           <div className="panel p-6 sm:p-8">
+            <div className="mb-5 px-3.5 py-2 rounded-lg border border-signal-500/30 bg-signal-500/10 flex items-center justify-between text-[11.5px] font-mono text-signal-300">
+              <span className="flex items-center gap-2 font-medium">
+                <span className="w-2 h-2 rounded-full bg-signal-400 animate-pulse" />
+                Appwrite Backend Active
+              </span>
+              <span className="text-fog-400 font-normal truncate max-w-[170px]" title={APPWRITE_PROJECT_ID}>{APPWRITE_PROJECT_ID}</span>
+            </div>
+
             {view !== "forgot" ? (
+
               <>
                 <div className="flex rounded-lg border border-line bg-ink-900/70 p-0.5 mb-6">
                   {(["signin", "signup"] as View[]).map((v) => (

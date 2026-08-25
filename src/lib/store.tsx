@@ -14,6 +14,14 @@ import {
 import type { ReactNode } from "react";
 import { defaultConfig, trainFederated } from "./flEngine";
 import type { PageId, PredictionRecord, RunResult, Toast } from "./types";
+import {
+  fetchPredictionsFromAppwrite,
+  fetchRunsFromAppwrite,
+  savePredictionToAppwrite,
+  saveRunToAppwrite,
+} from "./appwrite";
+
+import { useAuth } from "./auth";
 
 const K_RUNS = "fedshield.runs";
 const K_DISABLED = "fedshield.clients.disabled";
@@ -75,45 +83,62 @@ interface AppCtx {
 const Ctx = createContext<AppCtx | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const auth = useAuth();
+  const currentEmail = auth?.user?.email?.toLowerCase() || "guest@fedshield.demo";
+  const userRunKey = `${K_RUNS}.${currentEmail}`;
+  const userPredKey = `${K_PREDS}.${currentEmail}`;
+  const userDisabledKey = `${K_DISABLED}.${currentEmail}`;
+  const userCustomClientsKey = `${K_CUSTOM_CLIENTS}.${currentEmail}`;
+  const userDeletedClientsKey = `${K_DELETED_CLIENTS}.${currentEmail}`;
+
   const [page, setPage] = useState<PageId>("overview");
-  const [runs, setRuns] = useState<RunResult[]>(() => readJson<RunResult[]>(K_RUNS, []));
+  const [runs, setRuns] = useState<RunResult[]>(() => readJson<RunResult[]>(userRunKey, readJson<RunResult[]>(K_RUNS, [])));
   const [disabledClients, setDisabled] = useState<Record<string, string[]>>(() =>
-    readJson(K_DISABLED, {})
+    readJson(userDisabledKey, readJson(K_DISABLED, {}))
   );
   const [customClients, setCustomClients] = useState<Record<string, CustomClientDef[]>>(() =>
-    readJson(K_CUSTOM_CLIENTS, {})
+    readJson(userCustomClientsKey, readJson(K_CUSTOM_CLIENTS, {}))
   );
   const [deletedClients, setDeletedClients] = useState<Record<string, string[]>>(() =>
-    readJson(K_DELETED_CLIENTS, {})
+    readJson(userDeletedClientsKey, readJson(K_DELETED_CLIENTS, {}))
   );
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [predictions, setPredictions] = useState<PredictionRecord[]>(() =>
-    readJson<PredictionRecord[]>(K_PREDS, [])
+    readJson<PredictionRecord[]>(userPredKey, readJson<PredictionRecord[]>(K_PREDS, []))
   );
   const [customCount, setCustomCount] = useState(0);
   const toastId = useRef(1);
   const seededRef = useRef(false);
 
+  // Reload user-scoped data when active user email changes
   useEffect(() => {
-    writeJson(K_RUNS, runs.slice(0, 24));
-  }, [runs]);
+    setRuns(readJson<RunResult[]>(userRunKey, []));
+    setPredictions(readJson<PredictionRecord[]>(userPredKey, []));
+    setDisabled(readJson(userDisabledKey, {}));
+    setCustomClients(readJson(userCustomClientsKey, {}));
+    setDeletedClients(readJson(userDeletedClientsKey, {}));
+  }, [currentEmail, userRunKey, userPredKey, userDisabledKey, userCustomClientsKey, userDeletedClientsKey]);
 
   useEffect(() => {
-    writeJson(K_PREDS, predictions.slice(0, 60));
-  }, [predictions]);
+    writeJson(userRunKey, runs.slice(0, 24));
+  }, [runs, userRunKey]);
 
   useEffect(() => {
-    writeJson(K_DISABLED, disabledClients);
-  }, [disabledClients]);
+    writeJson(userPredKey, predictions.slice(0, 60));
+  }, [predictions, userPredKey]);
 
   useEffect(() => {
-    writeJson(K_CUSTOM_CLIENTS, customClients);
-  }, [customClients]);
+    writeJson(userDisabledKey, disabledClients);
+  }, [disabledClients, userDisabledKey]);
 
   useEffect(() => {
-    writeJson(K_DELETED_CLIENTS, deletedClients);
-  }, [deletedClients]);
+    writeJson(userCustomClientsKey, customClients);
+  }, [customClients, userCustomClientsKey]);
+
+  useEffect(() => {
+    writeJson(userDeletedClientsKey, deletedClients);
+  }, [deletedClients, userDeletedClientsKey]);
 
   const toast = useCallback((kind: Toast["kind"], msg: string) => {
     const id = toastId.current++;
@@ -128,8 +153,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addRun = useCallback((r: RunResult) => {
-    setRuns((prev) => [r, ...prev].slice(0, 24));
-  }, []);
+    const scopedRun: RunResult = { ...r, userEmail: currentEmail };
+    setRuns((prev) => [scopedRun, ...prev].slice(0, 24));
+    saveRunToAppwrite(scopedRun, currentEmail);
+  }, [currentEmail]);
 
   const deleteRun = useCallback((id: string) => {
     setRuns((prev) => prev.filter((r) => r.id !== id));
@@ -177,12 +204,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addPrediction = useCallback((p: PredictionRecord) => {
-    setPredictions((prev) => [p, ...prev].slice(0, 60));
-  }, []);
+    const scopedPred: PredictionRecord = { ...p, userEmail: currentEmail };
+    setPredictions((prev) => [scopedPred, ...prev].slice(0, 60));
+    savePredictionToAppwrite(scopedPred, currentEmail);
+  }, [currentEmail]);
 
   const clearPredictions = useCallback(() => setPredictions([]), []);
 
   const bumpCustom = useCallback(() => setCustomCount((c) => c + 1), []);
+
+  /* Sync data from Appwrite Cloud filtered for active userEmail */
+  useEffect(() => {
+    (async () => {
+      const apRuns = await fetchRunsFromAppwrite(currentEmail);
+      if (apRuns && apRuns.length > 0) {
+        setRuns(apRuns);
+      }
+      const apPreds = await fetchPredictionsFromAppwrite(currentEmail);
+      if (apPreds && apPreds.length > 0) {
+        setPredictions(apPreds);
+      }
+    })();
+  }, [currentEmail]);
+
+
 
   /* Seed initial runs */
   useEffect(() => {

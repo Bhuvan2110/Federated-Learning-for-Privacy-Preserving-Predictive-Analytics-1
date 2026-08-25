@@ -3,7 +3,7 @@
  *
  *  • Google AI Studio REST endpoint (Gemini 2.5 Flash / Pro)
  *  • Website Navigation & Control Intent Resolver
- *  • Deep Dataset Knowledge & Page Explanations
+ *  • Deep Dataset & Trained Model Summarization
  *  • Offline fallback knowledge base + session context
  * ───────────────────────────────────────────────────────────── */
 import type { PageId, RunResult } from "./types";
@@ -21,6 +21,7 @@ export interface AgentMsg {
 
 export interface AgentContext {
   userName: string;
+  userEmail?: string;
   mode: string;
   page: PageId;
   runs: RunResult[];
@@ -28,7 +29,7 @@ export interface AgentContext {
 }
 
 const K_GEMINI = "fedshield.gemini";
-const DEFAULT_KEY = "";
+export const DEFAULT_KEY = "";
 
 export const GEMINI_MODELS = [
   "gemini-2.5-flash",
@@ -36,6 +37,7 @@ export const GEMINI_MODELS = [
   "gemini-3.6-flash",
   "gemini-3.5-flash",
   "gemini-1.5-flash",
+  "gemini-1.5-pro",
 ];
 
 function readJson<T>(key: string, fallback: T): T {
@@ -51,8 +53,9 @@ export function loadGeminiSettings(): GeminiSettings {
   const stored = readJson<Partial<GeminiSettings>>(K_GEMINI, {});
   const env =
     ((import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {});
+  const keyCandidate = stored.apiKey || env.VITE_GEMINI_API_KEY || "";
   return {
-    apiKey: stored.apiKey ?? env.VITE_GEMINI_API_KEY ?? DEFAULT_KEY,
+    apiKey: keyCandidate.trim(),
     model: stored.model ?? env.VITE_GEMINI_MODEL ?? "gemini-2.5-flash",
   };
 }
@@ -71,11 +74,74 @@ export const QWEN_MODELS = GEMINI_MODELS;
 export const loadQwenSettings = loadGeminiSettings;
 export const saveQwenSettings = saveGeminiSettings;
 
+/* ── Dataset & Trained Model Summarizers ─────────────────────── */
+
+export function summarizeDatasets(userEmail?: string): string {
+  const dsList = listDatasets(userEmail);
+  if (dsList.length === 0) {
+    return "No datasets are currently registered in the Dataset Vault.";
+  }
+
+  const lines = [
+    `### 📊 Dataset Phase Summary (${dsList.length} Datasets Available)\n`,
+  ];
+
+  dsList.forEach((d, idx) => {
+    const isCustom = d.id.startsWith("custom-");
+    lines.push(
+      `**${idx + 1}. ${d.name}** (\`${d.id}\`)` +
+        (isCustom ? " — *Uploaded Custom CSV*" : ` — *${d.sector}*`)
+    );
+    lines.push(`• **Tag/Task**: ${d.tag}`);
+    lines.push(`• **Sample Size**: ${d.nSamples.toLocaleString()} rows`);
+    lines.push(`• **Positive Rate**: ${(d.positiveRate * 100).toFixed(1)}% (${d.positiveLabel} vs ${d.negativeLabel})`);
+    lines.push(
+      `• **Feature Schema (${d.features.length})**: ${d.features.map((f) => f.label).join(", ")}`
+    );
+    lines.push(`• **Description**: ${d.description}\n`);
+  });
+
+  return lines.join("\n");
+}
+
+export function summarizeTrainedModels(runs: RunResult[]): string {
+  const completed = runs.filter((r) => r.status === "completed");
+  if (completed.length === 0) {
+    return "No trained models have been completed yet. Open the Training Lab to execute a federated training run!";
+  }
+
+  const lines = [
+    `### 🤖 Trained Models & Federation Summary (${completed.length} Model${completed.length === 1 ? "" : "s"})\n`,
+  ];
+
+  completed.forEach((r, idx) => {
+    lines.push(`**${idx + 1}. ${r.modelName}** (\`${r.id}\`)`);
+    lines.push(`• **Dataset**: ${r.datasetId}`);
+    lines.push(`• **Strategy/Algorithm**: ${r.algo.toUpperCase()}`);
+    lines.push(
+      `• **Performance**: Accuracy ${(r.final.accuracy * 100).toFixed(1)}% · F1 ${r.final.f1.toFixed(3)} · AUC ${r.final.auc.toFixed(3)}`
+    );
+    lines.push(
+      `• **Federation Parameters**: ${r.config.nClients} client nodes · ${r.rounds.length} rounds · Dirichlet α=${r.config.alpha}`
+    );
+    lines.push(
+      `• **Privacy & Security**: ${
+        r.config.dp
+          ? `(ε,δ)-DP Enabled (ε spent ${r.epsilonSpent.toFixed(1)}, clip norm C=${r.config.clipNorm})`
+          : "No DP noise"
+      } · ${r.config.secureAgg ? "Secure Aggregation active" : "Standard aggregation"}`
+    );
+    lines.push(`• **Trained At**: ${new Date(r.createdAt).toLocaleString()}\n`);
+  });
+
+  return lines.join("\n");
+}
+
 /* ── Navigation Intent Resolver (Website Control) ────────────── */
 
 export function resolveNavigationIntent(input: string): PageId | null {
   const text = input.toLowerCase().trim();
-  
+
   if (/go to (training|lab)|open (training|lab)|show (training|lab)|start training/.test(text)) {
     return "lab";
   }
@@ -100,43 +166,34 @@ export function resolveNavigationIntent(input: string): PageId | null {
   if (/go to (overview|dashboard|home)|open (overview|dashboard)|show overview/.test(text)) {
     return "overview";
   }
-  
+
   return null;
 }
 
 /* ── System prompt (live platform context + full knowledge) ──── */
 
 export function buildSystemPrompt(ctx: AgentContext): string {
-  const datasetsInfo = listDatasets()
-    .map((d) => `• ${d.name} (${d.sector}): ${d.nSamples} rows, features: [${d.features.map((f) => f.key).join(", ")}]`)
-    .join("\n");
-
-  const latest = ctx.runs[0];
-  const runSummary = latest
-    ? `Latest training run: model "${latest.modelName}" on dataset ${latest.datasetId} using ${latest.algo.toUpperCase()}, ${
-        latest.rounds.length
-      } rounds, final accuracy ${(latest.final.accuracy * 100).toFixed(1)}%, F1 ${latest.final.f1.toFixed(
-        3
-      )}, AUC ${latest.final.auc.toFixed(3)}, ε spent ${latest.epsilonSpent.toFixed(1)} (DP ${
-        latest.config.dp ? "enabled" : "disabled"
-      }, secure aggregation ${latest.config.secureAgg ? "enabled" : "disabled"}).`
-    : "No training runs have been executed yet in this session.";
+  const datasetsSummary = summarizeDatasets(ctx.userEmail);
+  const modelsSummary = summarizeTrainedModels(ctx.runs);
 
   return [
     "You are the FedShield Copilot — an expert Google AI Studio voice & text agent embedded in the FedShield platform for Federated Learning with Privacy-Preserving Predictive Analytics.",
-    "You can answer detailed questions, explain datasets, explain website pages, and control website navigation via voice commands.",
-    "Web Navigation Control: You can navigate between pages: Overview, Training Lab, Prediction Console, Client Registry, Dataset Vault, Privacy Center, Predictive Analytics, and Training History.",
-    `Session state — user: ${ctx.userName} (${ctx.mode}); active page: ${ctx.page}; ${ctx.runs.length} training run(s) stored. ${runSummary}`,
-    "Available Platform Datasets:\n" + datasetsInfo,
-    "Website Page Structure:\n" +
-      "1. Overview: System stats, privacy budget, global model accuracy, convergence graph, client topology.\n" +
-      "2. Training Lab: Configure FedAvg/FedProx, rounds, clients, Dirichlet α, DP noise ε, and run FL simulation.\n" +
-      "3. Prediction: Query trained models with natural language or custom field inputs.\n" +
-      "4. Clients: Decentralized hospital/bank edge nodes registry and node status toggle.\n" +
-      "5. Datasets: Explore benchmark datasets or upload custom CSV datasets.\n" +
-      "6. Privacy Center: Differential privacy (ε, δ)-DP math, gradient clipping C, noise scale σ, and trade-offs.\n" +
-      "7. Analytics: Evaluation metrics, confusion matrix breakdown, ROC curve, precision/recall.\n" +
-      "8. History: Audit history of completed runs, JSON weight artifact download, and scannable QR code certificates.",
+    "You can answer detailed questions, summarize datasets, summarize trained models, explain website pages, and control website navigation via voice & text commands.",
+    "Web Navigation Control: You can navigate directly to pages: Overview, Training Lab, Prediction Console, Client Registry, Dataset Vault, Privacy Center, Predictive Analytics, and Training History.",
+    `Active Session — User: ${ctx.userName} (${ctx.mode}); Active Page: ${ctx.page}; ${ctx.runs.length} total training run(s) stored.`,
+    "\n--- LIVE DATASETS PHASE INVENTORY ---",
+    datasetsSummary,
+    "\n--- LIVE TRAINED MODELS INVENTORY ---",
+    modelsSummary,
+    "\nWebsite Page Structure:",
+    "1. Overview: System stats, privacy budget, global model accuracy, convergence graph, client topology.",
+    "2. Training Lab: Configure FedAvg/FedProx, rounds, clients, Dirichlet α, DP noise ε, and run FL simulation.",
+    "3. Prediction: Single prediction (natural language & feature sliders) & Multiple predictions (batch CSV inference).",
+    "4. Clients: Decentralized hospital/bank edge nodes registry and node status toggle.",
+    "5. Datasets: Explore benchmark datasets or upload custom CSV datasets.",
+    "6. Privacy Center: Differential privacy (ε, δ)-DP math, gradient clipping C, noise scale σ, and trade-offs.",
+    "7. Analytics: Evaluation metrics, confusion matrix breakdown, ROC curve, precision/recall.",
+    "8. History: Audit history of completed runs, JSON weight artifact download, and scannable QR code certificates.",
     "Style: concise, clear, and encouraging. Perfect for text and voice-to-speech output.",
   ].join("\n");
 }
@@ -218,7 +275,7 @@ export async function streamGemini(opts: {
   if (!res.ok) {
     const hint =
       res.status === 401 || res.status === 403
-        ? "Google AI Studio API key error — click gear icon to update key."
+        ? "Google AI Studio API key error — check your API key."
         : res.status === 429
         ? "Rate limit hit — please wait a moment."
         : `Google AI Studio responded with HTTP ${res.status}.`;
@@ -261,7 +318,7 @@ export async function streamGemini(opts: {
 
 export const streamQwen = streamGemini;
 
-/* ── Comprehensive Knowledge Base ─────────────────────────── */
+/* ── Comprehensive Local Knowledge Base Fallback ─────────── */
 
 interface KbEntry {
   keys: string[];
@@ -270,80 +327,58 @@ interface KbEntry {
 
 const KB: KbEntry[] = [
   {
+    keys: ["summarize dataset", "dataset summary", "datasets phase", "uploaded dataset"],
+    answer: (ctx) => summarizeDatasets(ctx.userEmail),
+  },
+  {
+    keys: ["summarize trained", "trained dataset", "trained data", "model summary", "trained model"],
+    answer: (ctx) => summarizeTrainedModels(ctx.runs),
+  },
+  {
     keys: ["cardio", "cardiovascular", "heart", "blood pressure"],
     answer: () =>
       `**Cardiovascular Risk Dataset (\`cardio\`):**
 • **Sector**: Healthcare / Clinical Cardiology
-• **Sample Count**: 1,000 clinical records across 4 hospital nodes
+• **Sample Count**: 6,000 clinical records across 4 hospital nodes
 • **Key Features**: Age, Systolic BP, Total Cholesterol, BMI, Fasting Glucose, Smoking Status, Heart Rate
-• **Target**: Cardiovascular Disease Risk (0: Normal, 1: High Risk)
-• **Federation Setup**: Simulates hospital sites with heterogeneous patient demographics. Hospital A has older high-risk cohorts, while Hospital B has screening cohorts.`,
+• **Target**: Cardiovascular Disease Risk (0: Normal, 1: High Risk)`,
   },
   {
     keys: ["credit", "financial", "loan", "bank", "credit score"],
     answer: () =>
       `**Credit Default Risk Dataset (\`credit\`):**
 • **Sector**: Financial Services / Banking Consortium
-• **Sample Count**: 1,200 applicant profiles across 4 banking institutions
+• **Sample Count**: 5,000 applicant profiles across 4 banking institutions
 • **Key Features**: Annual Income, Credit Score, Debt-to-Income (DTI), Loan Amount, Employment Length, Revolving Utilization
-• **Target**: Default Probability (0: Creditworthy, 1: High Default Risk)
-• **Federation Setup**: Banks train a global credit model without sharing sensitive borrower financial statements.`,
+• **Target**: Default Probability (0: Creditworthy, 1: High Default Risk)`,
   },
   {
-    keys: ["icu", "sepsis", "hospital", "critical care"],
-    answer: () =>
-      `**ICU Sepsis Early Warning Dataset (\`icu\`):**
-• **Sector**: Critical Care / Emergency Medicine
-• **Sample Count**: 850 ICU vital monitoring records
-• **Key Features**: Heart Rate, Respiratory Rate, Temperature, White Blood Cell Count, Lactate Level, Mean Arterial Pressure
-• **Target**: Sepsis Onset (0: Stable, 1: High Risk Sepsis)
-• **Federation Setup**: Real-time early warning model aggregated across regional ICU networks.`,
-  },
-  {
-    keys: ["churn", "telecom", "customer"],
-    answer: () =>
-      `**Customer Churn Dataset (\`churn\`):**
-• **Sector**: Telecom & Subscription Services
-• **Sample Count**: 1,500 subscriber profiles across 5 regional operators
-• **Key Features**: Tenure Months, Monthly Charges, Total Charges, Support Tickets, Contract Length
-• **Target**: Subscription Cancellation (0: Retained, 1: Churn Risk).`,
-  },
-  {
-    keys: ["smartgrid", "energy", "grid", "voltage"],
-    answer: () =>
-      `**Smart Grid Outage Dataset (\`smartgrid\`):**
-• **Sector**: Energy & Public Utilities
-• **Sample Count**: 900 substation grid sensor readings
-• **Key Features**: Voltage Fluctuation, Transformer Temp, Peak Load Ratio, Harmonic Distortion
-• **Target**: Failure Risk (0: Normal, 1: Outage Risk).`,
-  },
-  {
-    keys: ["pages", "explain website", "features", "navigation", "overview", "lab", "privacy", "analytics", "history", "health", "system health", "diagnostics"],
+    keys: ["pages", "explain website", "features", "navigation", "overview", "lab", "privacy", "analytics", "history", "health"],
     answer: (ctx) =>
       `**FedShield Platform Navigation Guide:**
 1. **Overview** (\`overview\`): Operations dashboard showing global accuracy, privacy budget spent (ε), and node topology.
 2. **Training Lab** (\`lab\`): Configure & run FedAvg/FedProx training rounds, Dirichlet α skew, DP noise, and secure aggregation.
-3. **Prediction** (\`predict\`): Natural language query and custom input inference console.
+3. **Prediction** (\`predict\`): Natural language & feature sliders for single prediction + batch CSV inference for multiple predictions.
 4. **Clients** (\`clients\`): Manage decentralized hospital/bank client nodes.
 5. **Datasets** (\`datasets\`): Explore pre-loaded datasets or upload custom CSV datasets.
 6. **Privacy Center** (\`privacy\`): Differential Privacy (ε, δ)-DP math, clipping bound C, noise scale σ.
 7. **Analytics** (\`analytics\`): Confusion matrices, ROC curves, and precision-recall trade-offs.
 8. **History** (\`history\`): View past training runs, export model JSON weights, and generate scannable QR code certificates.
-9. **System Health** (\`health\`): Automated API diagnostics, engine micro-simulations, and step-by-step fix recommendations.
 
 *Currently viewing: \`${ctx.page}\`*`,
-  },
-  {
-    keys: ["fedavg", "federated averaging"],
-    answer: (ctx) =>
-      `**Federated Averaging (FedAvg)** aggregates local weights $w_i^t$ into global weights $w^{t+1} = \\sum_{i=1}^K \\frac{n_i}{N} w_i^t$. Raw training rows never leave client devices.
-
-*Session state:* ${ctx.runs.length} run(s) recorded.`,
   },
 ];
 
 export function localAnswer(question: string, ctx: AgentContext): string {
   const q = question.toLowerCase();
+
+  if (/summariz(e|ing)\s+(all\s+)?dataset/.test(q) || /dataset\s+summary/.test(q)) {
+    return summarizeDatasets(ctx.userEmail);
+  }
+  if (/summariz(e|ing)\s+(trained|model|run)/.test(q) || /trained\s+data/.test(q)) {
+    return summarizeTrainedModels(ctx.runs);
+  }
+
   for (const entry of KB) {
     if (entry.keys.some((k) => q.includes(k))) {
       return entry.answer(ctx);
@@ -358,8 +393,8 @@ I am connected to the **FedShield Federated Analytics Platform**.
 • **Runs in session**: ${ctx.runs.length}
 
 You can ask me to:
-• **"Go to Training Lab"** or **"Show Datasets"** (Voice/text navigation)
-• **"Explain cardio dataset"** or **"Explain credit dataset"**
-• **"Explain the website pages"**
-• **"Explain differential privacy and FedAvg"**`;
+• **"Summarize Datasets"** — summarize all datasets in the dataset phase.
+• **"Summarize Trained Models"** — summarize all trained models and performance.
+• **"Open Datasets"** / **"Open Training Lab"** — direct navigation.
+• **"Explain cardio dataset"** / **"Explain credit dataset"**`;
 }

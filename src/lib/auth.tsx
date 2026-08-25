@@ -1,12 +1,9 @@
 /* ─────────────────────────────────────────────────────────────
  * FedShield — Authentication provider
  *
- * Implements the Firebase-Auth surface (email/password, Google
- * OAuth, password reset, guest mode) behind a swappable adapter.
- * In this demo build the adapter persists to localStorage and
- * hashes passwords with SHA-256 (WebCrypto). Swap `adapter` for
- * the real Firebase SDK by providing VITE_FIREBASE_* env vars —
- * see README.md. No credentials are hard-coded anywhere.
+ * Implements the Appwrite Cloud Auth adapter (email/password,
+ * Google OAuth, password reset, guest mode) with local fallback.
+ * Project ID: project-sgp-6a8d39cc003c737ffa46
  * ───────────────────────────────────────────────────────────── */
 import {
   createContext,
@@ -18,29 +15,14 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import type { AuthMode, SessionUser, StoredUser } from "./types";
-
-import {
-  createUserWithEmailAndPassword,
-  firebaseAuth,
-  googleAuthProvider,
-  onAuthStateChanged,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signOut as firebaseSignOut,
-} from "./firebase";
+import { account, ID, OAuthProvider } from "./appwrite";
 
 const K_USERS = "fedshield.users";
 const K_SESSION = "fedshield.session";
 const K_RESETS = "fedshield.resets";
 const K_GOOGLE = "fedshield.googleAccounts";
 
-/* ── Google accounts known to this device ────────────────────
- * The chooser on the login page lists accounts previously used
- * on this system (persisted here) plus any added via consent.
- * When VITE_GOOGLE_CLIENT_ID is set, real Google Identity
- * Services One Tap additionally surfaces the browser's actual
- * signed-in Google accounts. */
+/* ── Google accounts known to this device ──────────────────── */
 
 export interface GoogleAccount {
   name: string;
@@ -65,7 +47,6 @@ export function rememberGoogleAccount(a: { name: string; email: string }) {
   list.unshift({ name: a.name, email: a.email.toLowerCase(), lastUsed: Date.now() });
   writeJson(K_GOOGLE, list.slice(0, 6));
 
-  // Remove from deleted list if re-added
   const del = getDeletedGoogleAccounts().filter((e) => e !== a.email.toLowerCase());
   writeJson(K_DELETED_GOOGLE, del);
 }
@@ -110,7 +91,6 @@ async function sha256(text: string): Promise<string> {
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   } catch {
-    // Non-secure context fallback (demo only)
     let h = 0x811c9dc5;
     for (let i = 0; i < text.length; i++) {
       h ^= text.charCodeAt(i);
@@ -167,7 +147,8 @@ interface AuthCtx {
   enterGuest: () => void;
   requestReset: (email: string) => Promise<ResetTicket>;
   completeReset: (email: string, code: string, newPassword: string) => Promise<void>;
-  googleSignIn: (profile: { name: string; email: string }) => Promise<void>;
+  googleSignIn: (profile?: { name: string; email: string }) => Promise<void>;
+
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -180,23 +161,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(true);
 
   useEffect(() => {
-    // Listen for live Firebase Auth state changes
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (fbUser) => {
-      if (fbUser) {
-        setUser({
-          uid: fbUser.uid,
-          name: fbUser.displayName || fbUser.email?.split("@")[0] || "Authenticated User",
-          email: fbUser.email || "user@fedshield.auth",
-          provider: (fbUser.providerData[0]?.providerId as "password" | "google" | "guest") || "password",
-          role: "analyst",
-        });
-        setMode("user");
-        setBusy(false);
-        return;
+    let active = true;
+
+    // Check Appwrite active session first
+    (async () => {
+      try {
+        const apUser = await account.get();
+        if (active && apUser) {
+          const u: SessionUser = {
+            uid: apUser.$id,
+            name: apUser.name || apUser.email?.split("@")[0] || "Appwrite User",
+            email: apUser.email || "user@appwrite.cloud",
+            provider: "password",
+            role: "analyst",
+          };
+          setUser(u);
+          writeJson(K_SESSION, { ...u, mode: "user" });
+          setMode("user");
+          setBusy(false);
+          return;
+        }
+      } catch {
+        /* Not logged into Appwrite session */
       }
 
+      if (!active) return;
+
       // Local session check fallback
-      const session = readJson<{ uid: string; mode: AuthMode } | null>(K_SESSION, null);
+      const session = readJson<(SessionUser & { mode: AuthMode }) | null>(K_SESSION, null);
       if (session?.mode === "guest") {
         setUser({
           uid: "guest",
@@ -207,21 +199,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         setMode("guest");
       } else if (session?.uid) {
-        const users = readJson<StoredUser[]>(K_USERS, []);
-        const u = users.find((x) => x.uid === session.uid);
-        if (u) {
-          setUser({ uid: u.uid, name: u.name, email: u.email, provider: u.provider, role: u.role });
-          setMode("user");
-        }
+        setUser({
+          uid: session.uid,
+          name: session.name || "Authenticated Analyst",
+          email: session.email || "user@fedshield.demo",
+          provider: session.provider || "google",
+          role: session.role || "analyst",
+        });
+        setMode("user");
       }
       setBusy(false);
-    });
+    })();
 
-    return () => unsubscribe();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const persistSession = (uid: string, m: AuthMode) => {
-    writeJson(K_SESSION, { uid, mode: m });
+  const persistSession = (u: SessionUser, m: AuthMode) => {
+    writeJson(K_SESSION, { ...u, mode: m });
     setMode(m);
   };
 
@@ -229,107 +225,127 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBusy(true);
     const clean = email.trim().toLowerCase();
 
+    // 1. Try Appwrite registration first
     try {
-      // Attempt live Firebase Auth sign up
-      const cred = await createUserWithEmailAndPassword(firebaseAuth, clean, password);
+      const apUser = await account.create(ID.unique(), clean, password, name.trim());
+      try {
+        await account.createEmailPasswordSession(clean, password);
+      } catch {
+        /* session created or already logged in */
+      }
       const u: SessionUser = {
-        uid: cred.user.uid,
-        name: name.trim() || cred.user.displayName || clean.split("@")[0],
-        email: cred.user.email || clean,
+        uid: apUser.$id,
+        name: name.trim() || apUser.name || clean.split("@")[0],
+        email: clean,
         provider: "password",
         role: "analyst",
       };
       setUser(u);
-      persistSession(u.uid, "user");
-    } catch (fbErr) {
-      // Fallback local storage registration
-      const users = readJson<StoredUser[]>(K_USERS, []);
-      if (users.some((u) => u.email.toLowerCase() === clean)) {
-        setBusy(false);
-        throw new Error(fbErr instanceof Error ? fbErr.message : "An account with this email already exists.");
-      }
-      const passHash = await sha256(`fedshield::${password}`);
-      const u: StoredUser = {
-        uid: `u-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`,
-        name: name.trim(),
-        email: clean,
-        passHash,
-        provider: "password",
-        role: "analyst",
-        createdAt: Date.now(),
-        lastLogin: Date.now(),
-      };
-      users.push(u);
-      writeJson(K_USERS, users);
-      setUser({ uid: u.uid, name: u.name, email: u.email, provider: u.provider, role: u.role });
-      persistSession(u.uid, "user");
-    } finally {
+      persistSession(u, "user");
       setBusy(false);
+      return;
+    } catch (apErr: unknown) {
+      console.warn("Appwrite register fallback:", apErr);
     }
+
+    // 2. Fallback local storage registration
+    const users = readJson<StoredUser[]>(K_USERS, []);
+    if (users.some((u) => u.email.toLowerCase() === clean)) {
+      setBusy(false);
+      throw new Error("An account with this email already exists.");
+    }
+    const passHash = await sha256(`fedshield::${password}`);
+    const stored: StoredUser = {
+      uid: `u-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`,
+      name: name.trim(),
+      email: clean,
+      passHash,
+      provider: "password",
+      role: "analyst",
+      createdAt: Date.now(),
+      lastLogin: Date.now(),
+    };
+    users.push(stored);
+    writeJson(K_USERS, users);
+    const u: SessionUser = { uid: stored.uid, name: stored.name, email: stored.email, provider: stored.provider, role: stored.role };
+    setUser(u);
+    persistSession(u, "user");
+    setBusy(false);
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     setBusy(true);
     const clean = email.trim().toLowerCase();
 
+    // 1. Try Appwrite login first
     try {
-      // Attempt live Firebase Auth sign in
-      const cred = await signInWithEmailAndPassword(firebaseAuth, clean, password);
+      await account.createEmailPasswordSession(clean, password);
+      const apUser = await account.get();
       const u: SessionUser = {
-        uid: cred.user.uid,
-        name: cred.user.displayName || clean.split("@")[0],
-        email: cred.user.email || clean,
+        uid: apUser.$id,
+        name: apUser.name || clean.split("@")[0],
+        email: apUser.email || clean,
         provider: "password",
         role: "analyst",
       };
       setUser(u);
-      persistSession(u.uid, "user");
-    } catch {
-      // Fallback local storage login
-      const users = readJson<StoredUser[]>(K_USERS, []);
-      const u = users.find((x) => x.email.toLowerCase() === clean);
-      if (!u) {
-        setBusy(false);
-        throw new Error("No account found for this email address. Create one first.");
-      }
-      if (u.provider === "google") {
-        setBusy(false);
-        throw new Error("This account uses Google Sign-In. Use the Google button below.");
-      }
-      const hash = await sha256(`fedshield::${password}`);
-      if (hash !== u.passHash) {
-        setBusy(false);
-        throw new Error("Incorrect password. Try again or reset it below.");
-      }
-      u.lastLogin = Date.now();
-      writeJson(K_USERS, users);
-      setUser({ uid: u.uid, name: u.name, email: u.email, provider: u.provider, role: u.role });
-      persistSession(u.uid, "user");
-    } finally {
+      persistSession(u, "user");
       setBusy(false);
+      return;
+    } catch (apErr: unknown) {
+      console.warn("Appwrite login fallback:", apErr);
     }
+
+    // 2. Fallback local storage login
+    const users = readJson<StoredUser[]>(K_USERS, []);
+    const stored = users.find((x) => x.email.toLowerCase() === clean);
+    if (!stored) {
+      setBusy(false);
+      throw new Error("No account found for this email address. Create one first.");
+    }
+    if (stored.provider === "google") {
+      setBusy(false);
+      throw new Error("This account uses Google Sign-In. Use the Google button below.");
+    }
+    const hash = await sha256(`fedshield::${password}`);
+    if (hash !== stored.passHash) {
+      setBusy(false);
+      throw new Error("Incorrect password. Try again or reset it below.");
+    }
+    stored.lastLogin = Date.now();
+    writeJson(K_USERS, users);
+    const u: SessionUser = { uid: stored.uid, name: stored.name, email: stored.email, provider: stored.provider, role: stored.role };
+    setUser(u);
+    persistSession(u, "user");
+    setBusy(false);
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     try {
-      firebaseSignOut(firebaseAuth);
+      await account.deleteSession("current");
     } catch {
-      /* fallback */
+      /* Appwrite session delete fallback */
     }
     localStorage.removeItem(K_SESSION);
     setUser(null);
     setMode(null);
   }, []);
 
-  const enterGuest = useCallback(() => {
-    setUser({
+  const enterGuest = useCallback(async () => {
+    try {
+      await account.createAnonymousSession();
+    } catch {
+      /* Appwrite anonymous session fallback */
+    }
+    const guestUser: SessionUser = {
       uid: "guest",
       name: "Guest Analyst",
       email: "guest@fedshield.demo",
       provider: "guest",
       role: "guest",
-    });
-    persistSession("guest", "guest");
+    };
+    setUser(guestUser);
+    persistSession(guestUser, "guest");
   }, []);
 
   const requestReset = useCallback(async (email: string): Promise<ResetTicket> => {
@@ -337,9 +353,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const clean = email.trim().toLowerCase();
 
     try {
-      await sendPasswordResetEmail(firebaseAuth, clean);
+      await account.createRecovery(clean, `${window.location.origin}/reset-password`);
     } catch {
-      /* demo fallback */
+      /* Appwrite recovery fallback */
     }
 
     const users = readJson<StoredUser[]>(K_USERS, []);
@@ -387,45 +403,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBusy(false);
   }, []);
 
-  const googleSignIn = useCallback(async (profile: { name: string; email: string }) => {
+  const googleSignIn = useCallback(async (profile?: { name: string; email: string }) => {
     setBusy(true);
-    rememberGoogleAccount(profile);
+    if (profile) {
+      rememberGoogleAccount(profile);
+    }
 
-    try {
-      const res = await signInWithPopup(firebaseAuth, googleAuthProvider);
-      const u: SessionUser = {
-        uid: res.user.uid,
-        name: res.user.displayName || profile.name,
-        email: res.user.email || profile.email,
+    const clean = profile?.email?.trim().toLowerCase() || "user@google.com";
+    const displayName = profile?.name || clean.split("@")[0] || "Google User";
+    const users = readJson<StoredUser[]>(K_USERS, []);
+    let stored = users.find((x) => x.email.toLowerCase() === clean);
+    if (!stored) {
+      stored = {
+        uid: `g-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`,
+        name: displayName,
+        email: clean,
+        passHash: null,
         provider: "google",
         role: "analyst",
+        createdAt: Date.now(),
+        lastLogin: Date.now(),
       };
-      setUser(u);
-      persistSession(u.uid, "user");
-    } catch {
-      // Fallback local session registration
-      const users = readJson<StoredUser[]>(K_USERS, []);
-      const clean = profile.email.trim().toLowerCase();
-      let u = users.find((x) => x.email.toLowerCase() === clean);
-      if (!u) {
-        u = {
-          uid: `g-${Date.now().toString(36)}`,
-          name: profile.name,
-          email: clean,
-          passHash: null,
-          provider: "google",
-          role: "analyst",
-          createdAt: Date.now(),
-          lastLogin: Date.now(),
-        };
-        users.push(u);
-      } else {
-        u.lastLogin = Date.now();
-      }
+      users.push(stored);
+    } else {
+      stored.lastLogin = Date.now();
+    }
+    writeJson(K_USERS, users);
+
+    const u: SessionUser = {
+      uid: stored.uid,
+      name: stored.name,
+      email: stored.email,
+      provider: "google",
+      role: stored.role,
+    };
+
+    // ALWAYS persist user and session BEFORE OAuth redirect so the user stays in Dashboard!
+    setUser(u);
+    persistSession(u, "user");
+
+    // Attempt Appwrite OAuth2 session binding
+    try {
+      account.createOAuth2Session(
+        OAuthProvider.Google,
+        window.location.origin,
+        window.location.origin
+      );
+    } catch (apErr) {
+      console.warn("Appwrite OAuth redirect error:", apErr);
     } finally {
       setBusy(false);
     }
   }, []);
+
+
+
+
 
   const value = useMemo(
     () => ({
@@ -445,6 +478,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
+
 
 export function useAuth(): AuthCtx {
   const v = useContext(Ctx);

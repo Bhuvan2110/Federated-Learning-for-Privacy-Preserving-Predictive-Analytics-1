@@ -251,17 +251,34 @@ export const customGenerated = new Map<string, _GD>();
 
 const K_CUSTOM = "fedshield.custom.datasets";
 
-export function loadCustomDatasets(): CustomDatasetDef[] {
+function getActiveUserEmail(): string {
   try {
+    const raw = localStorage.getItem("fedshield.session");
+    if (!raw) return "guest@fedshield.demo";
+    const parsed = JSON.parse(raw) as { email?: string };
+    return parsed.email?.toLowerCase() || "guest@fedshield.demo";
+  } catch {
+    return "guest@fedshield.demo";
+  }
+}
+
+export function loadCustomDatasets(userEmail?: string): CustomDatasetDef[] {
+  try {
+    const activeEmail = (userEmail || getActiveUserEmail()).toLowerCase();
     const raw = localStorage.getItem(K_CUSTOM);
-    const list = raw ? (JSON.parse(raw) as CustomDatasetDef[]) : [];
+    const allList = raw ? (JSON.parse(raw) as CustomDatasetDef[]) : [];
     customMap.clear();
     customGenerated.clear();
-    for (const def of list) {
+    
+    // Strict Privacy filter: ONLY datasets created by THIS exact email address!
+    const userList = allList.filter(
+      (d) => d.ownerEmail && d.ownerEmail.toLowerCase() === activeEmail
+    );
+    for (const def of userList) {
       customMap.set(def.id, def);
       customGenerated.set(def.id, defToGenerated(def));
     }
-    return list;
+    return userList;
   } catch {
     return [];
   }
@@ -278,33 +295,52 @@ function defToGenerated(def: CustomDatasetDef): _GD {
   };
 }
 
-export function registerCustomDataset(def: CustomDatasetDef): boolean {
+export function registerCustomDataset(def: CustomDatasetDef, userEmail?: string): boolean {
   if (customMap.size >= 6) return false; // keep localStorage quota safe
-  customMap.set(def.id, def);
-  customGenerated.set(def.id, defToGenerated(def));
-  persistCustom();
+  const activeEmail = (userEmail || getActiveUserEmail()).toLowerCase();
+  const scopedDef: CustomDatasetDef = { ...def, ownerEmail: activeEmail };
+  customMap.set(scopedDef.id, scopedDef);
+  customGenerated.set(scopedDef.id, defToGenerated(scopedDef));
+  persistCustom(scopedDef);
   return true;
 }
 
 export function removeCustomDataset(id: string): boolean {
   customMap.delete(id);
   customGenerated.delete(id);
-  persistCustom();
+  
+  // Update persistent array in localStorage
+  try {
+    const raw = localStorage.getItem(K_CUSTOM);
+    const allList = raw ? (JSON.parse(raw) as CustomDatasetDef[]) : [];
+    const nextList = allList.filter((d) => d.id !== id);
+    localStorage.setItem(K_CUSTOM, JSON.stringify(nextList));
+  } catch {
+    /* quota fallback */
+  }
   return true;
 }
 
-function persistCustom() {
+function persistCustom(newDef: CustomDatasetDef) {
   try {
-    localStorage.setItem(K_CUSTOM, JSON.stringify(Array.from(customMap.values())));
+    const raw = localStorage.getItem(K_CUSTOM);
+    const allList = raw ? (JSON.parse(raw) as CustomDatasetDef[]) : [];
+    const filtered = allList.filter((d) => d.id !== newDef.id);
+    filtered.push(newDef);
+    localStorage.setItem(K_CUSTOM, JSON.stringify(filtered));
   } catch {
     /* quota exceeded — keep in memory only */
   }
 }
 
-/** All dataset metas: built-in + uploaded custom. */
-export function listDatasets(): DatasetMeta[] {
+/** All dataset metas: built-in + uploaded custom (scoped strictly to active user). */
+export function listDatasets(userEmail?: string): DatasetMeta[] {
+  const activeEmail = (userEmail || getActiveUserEmail()).toLowerCase();
+  loadCustomDatasets(activeEmail);
   return [...DATASETS, ...Array.from(customMap.values()).map((d) => d.meta)];
 }
+
+
 
 export function isCustom(id: string): boolean {
   return customMap.has(id);

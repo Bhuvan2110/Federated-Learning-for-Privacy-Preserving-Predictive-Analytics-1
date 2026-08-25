@@ -23,7 +23,8 @@ const SPEEDS = [
 export default function TrainingLab() {
   const { runs, addRun, toast, disabledClients, setPage, customCount } = useApp();
   const { user } = useAuth();
-  const allDatasets = useMemo(() => listDatasets(), [customCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allDatasets = useMemo(() => listDatasets(user?.email), [customCount, user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [config, setConfig] = useState<TrainingConfig>(() => defaultConfig("cardio"));
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");

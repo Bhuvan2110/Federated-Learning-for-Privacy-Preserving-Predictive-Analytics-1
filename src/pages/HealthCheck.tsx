@@ -8,6 +8,7 @@ import { useApp } from "../lib/store";
 import { loadGeminiSettings } from "../lib/gemini";
 import { defaultConfig, trainFederated } from "../lib/flEngine";
 import { parseCSV, buildCustomDataset } from "../lib/csv";
+import { checkAppwriteHealth, APPWRITE_PROJECT_ID } from "../lib/appwrite";
 import { Badge, Button, Panel, ProgressBar, cn } from "../components/ui";
 import { IconCheck, IconLogo, IconMic, IconNodes, IconQrCode, IconRefresh, IconShield, IconSparkle, IconStop } from "../components/icons";
 
@@ -27,6 +28,13 @@ export default function HealthCheck() {
   const { runs, disabledClients } = useApp();
   const [testing, setTesting] = useState(false);
   const [testCases, setTestCases] = useState<TestCase[]>([
+    {
+      id: "appwrite_cloud",
+      category: "api",
+      name: `Appwrite Cloud Backend (${APPWRITE_PROJECT_ID})`,
+      description: "Verifies HTTPS connection, Authentication session, and Database readiness on Appwrite Cloud",
+      status: "idle",
+    },
     {
       id: "gemini_api",
       category: "api",
@@ -71,6 +79,7 @@ export default function HealthCheck() {
     },
   ]);
 
+
   const updateCase = (id: string, patch: Partial<TestCase>) => {
     setTestCases((prev) => prev.map((tc) => (tc.id === id ? { ...tc, ...patch } : tc)));
   };
@@ -79,7 +88,39 @@ export default function HealthCheck() {
     setTesting(true);
     setTestCases((prev) => prev.map((tc) => ({ ...tc, status: "running", message: "Running test case...", errorDetails: undefined, fixRecommendation: undefined })));
 
+    // 0. Appwrite Cloud Backend Test
+    updateCase("appwrite_cloud", { status: "running", message: "Connecting to Appwrite Cloud..." });
+    const t0Ap = performance.now();
+    try {
+      const apStatus = await checkAppwriteHealth();
+      const latAp = Math.round(performance.now() - t0Ap);
+      if (apStatus.online) {
+        updateCase("appwrite_cloud", {
+          status: "pass",
+          latencyMs: latAp,
+          message: `200 OK — Connected to Appwrite Cloud (${latAp}ms). Auth: ${apStatus.authenticated ? `Session Active (${apStatus.userEmail || apStatus.userName})` : "Guest/Anonymous"}, Database: ${apStatus.dbReady ? "Ready" : "Collections pending"}`,
+        });
+      } else {
+        updateCase("appwrite_cloud", {
+          status: "warn",
+          latencyMs: latAp,
+          message: "Appwrite Offline / Fallback Active",
+          errorDetails: apStatus.error || "Unable to reach Appwrite Cloud endpoint.",
+          fixRecommendation: "Check internet connection and verify VITE_APPWRITE_ENDPOINT in .env file.",
+        });
+      }
+    } catch (err) {
+      updateCase("appwrite_cloud", {
+        status: "warn",
+        latencyMs: Math.round(performance.now() - t0Ap),
+        message: "Appwrite Exception",
+        errorDetails: err instanceof Error ? err.message : String(err),
+        fixRecommendation: "Verify Appwrite project ID and CORS settings.",
+      });
+    }
+
     // 1. Google AI Studio API Test
+
     updateCase("gemini_api", { status: "running", message: "Pinging Google AI Studio endpoint..." });
     const t0Api = performance.now();
     const settings = loadGeminiSettings();
